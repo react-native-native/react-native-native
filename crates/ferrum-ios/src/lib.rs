@@ -39,6 +39,12 @@ pub use app_delegate::AppDelegate;
 pub use display_link::FerrumDisplayLink;
 pub use runtime::bootstrap_ferrum_runtime;
 
+// Re-export the C FFI bridge so symbols appear in libferrum_ios.a.
+// Without this, the #[no_mangle] extern "C" functions in ferrum_core::bridge
+// would be dead-code-eliminated by the linker.
+pub use ferrum_core::bridge::ferrum_bridge_init;
+pub use ferrum_core::bridge::ferrum_bridge_free_string;
+
 /// Global frame counter incremented by the CADisplayLink callback.
 /// Phase 1 will use this to drive the Hermes `requestAnimationFrame` scheduler.
 pub(crate) static FRAME_COUNTER: AtomicI64 = AtomicI64::new(0);

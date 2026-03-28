@@ -5,6 +5,7 @@
 //! simpler `FerumRuntime` API and pre-registers Phase 0 built-ins.
 
 pub mod bootstrap;
+pub mod bridge;
 
 // Re-export the most commonly needed types so platform crates only need one
 // import.
