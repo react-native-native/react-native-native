@@ -28,6 +28,8 @@ Pod::Spec.new do |s|
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'OTHER_LDFLAGS' => '$(inherited) -lc++',
+    # Hermes C ABI headers (from vendored submodule)
+    'HEADER_SEARCH_PATHS' => '$(inherited) "$(PODS_ROOT)/../../../../vendor/hermes/API/hermes_abi" "$(PODS_ROOT)/../../../../vendor/hermes/API/jsi" "$(PODS_ROOT)/../../../../vendor/hermes/API" "$(PODS_ROOT)/../../../../vendor/hermes/public" "$(PODS_ROOT)/Headers/Public/React-jsi" "$(PODS_ROOT)/Headers/Public/React-RuntimeCore" "$(PODS_ROOT)/Headers/Public/React-jsitooling" "$(PODS_ROOT)/Headers/Public/React-jsinspector" "$(PODS_ROOT)/Headers/Public/React-jsinspectorcdp"',
   }
 
   s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"

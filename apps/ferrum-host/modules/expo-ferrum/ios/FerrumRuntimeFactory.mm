@@ -1,50 +1,51 @@
-/// FerrumRuntimeFactory — the Ferrum orchestrator's single injection point.
+/// FerrumRuntimeFactory — the Ferrum orchestrator.
 ///
-/// Replaces the standard Hermes JSRuntimeFactory. Creates Hermes via the
-/// C ABI, registers Rust function pointers, then wraps as jsi::Runtime.
+/// One C++ class, one method. Creates Hermes via C ABI, registers Rust
+/// function pointers, wraps as jsi::Runtime. Single runtime, 0.20μs path.
 
-#include "FerrumRuntimeFactory.h"
+#import <Foundation/Foundation.h>
+#include <react/runtime/JSRuntimeFactory.h>
+#include <hermes_abi/hermes_abi.h>
+#include <hermes_abi/hermes_vtable.h>
+#include <hermes_abi/HermesABIRuntimeWrapper.h>
 
-// Include the FULL HermesABIRuntimeWrapper implementation.
-// This is a .cpp file, not a header — we include it to get the
-// HermesABIRuntimeWrapper class definition so we can subclass or
-// construct it with our own runtime.
-//
-// This is unconventional but necessary: the class is not exposed via
-// any public header, and we need to either subclass it or access abiRt_.
-// Phase 2 will upstream a proper constructor that accepts an existing runtime.
-#include <hermes_abi/HermesABIRuntimeWrapper.cpp>
+// Rust FFI — registers function pointers on the C ABI runtime
+extern "C" void ferrum_register_globals(
+    HermesABIRuntime *rt,
+    const HermesABIRuntimeVTable *vt);
 
 namespace ferrum {
 
-/// A subclass that creates the runtime BEFORE the wrapper, so we can
-/// register Rust functions on the raw C ABI before JSI wrapping happens.
-class FerrumABIRuntimeWrapper : public facebook::hermes::HermesABIRuntimeWrapper {
+class FerrumRuntimeFactory : public facebook::react::JSRuntimeFactory {
 public:
-  FerrumABIRuntimeWrapper(const HermesABIVTable *vtable)
-      : HermesABIRuntimeWrapper(vtable) {
-    // At this point, abiRt_ is live (created by parent constructor).
-    // Register Rust functions on it via C ABI.
-    NSLog(@"[Ferrum] Registering Rust globals on C ABI runtime...");
-    ferrum_register_globals(abiRt_, vtable_);
-    NSLog(@"[Ferrum] Rust globals registered");
+  std::unique_ptr<facebook::react::JSRuntime> createJSRuntime(
+      std::shared_ptr<facebook::react::MessageQueueThread> msgQueueThread) noexcept override {
+
+    NSLog(@"[Ferrum] FerrumRuntimeFactory::createJSRuntime");
+
+    // 1. C ABI entry point
+    const HermesABIVTable *vtable = get_hermes_abi_vtable();
+
+    // 2. Create Hermes runtime via C ABI
+    HermesABIRuntime *abiRt = vtable->make_hermes_runtime(nullptr);
+    NSLog(@"[Ferrum] Hermes V1 runtime created via C ABI");
+
+    // 3. Register Rust functions at the engine level (0.20μs path)
+    ferrum_register_globals(abiRt, abiRt->vt);
+    NSLog(@"[Ferrum] Rust globals registered via C ABI fn ptrs");
+
+    // 4. Wrap this SAME runtime as jsi::Runtime for React/Fabric
+    auto jsiRuntime = facebook::hermes::makeHermesABIRuntimeWrapperFromExisting(vtable, abiRt);
+    NSLog(@"[Ferrum] Wrapped as jsi::Runtime — single runtime, handing to ReactInstance");
+
+    return std::make_unique<facebook::react::JSIRuntimeHolder>(std::move(jsiRuntime));
   }
 };
 
-std::unique_ptr<facebook::react::JSRuntime>
-FerrumRuntimeFactory::createJSRuntime(
-    std::shared_ptr<facebook::react::MessageQueueThread> msgQueueThread) noexcept {
-
-  NSLog(@"[Ferrum] FerrumRuntimeFactory: creating Hermes V1 via C ABI");
-
-  const HermesABIVTable *vtable = get_hermes_abi_vtable();
-
-  // Create our wrapper (registers Rust globals in constructor)
-  auto runtime = std::make_unique<FerrumABIRuntimeWrapper>(vtable);
-
-  NSLog(@"[Ferrum] Handing jsi::Runtime to ReactInstance");
-
-  return std::make_unique<facebook::react::JSIRuntimeHolder>(std::move(runtime));
-}
-
 } // namespace ferrum
+
+// C bridge for Swift
+extern "C" void *jsrt_create_ferrum_factory(void) {
+  NSLog(@"[Ferrum] jsrt_create_ferrum_factory");
+  return reinterpret_cast<void *>(new ferrum::FerrumRuntimeFactory());
+}
