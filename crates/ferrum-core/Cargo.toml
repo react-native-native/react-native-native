@@ -1,0 +1,11 @@
+[package]
+name = "ferrum-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared Hermes runtime initialization for Project Ferrum (Phase 0)"
+
+[dependencies]
+hermes-abi-rs.workspace = true
+log.workspace = true
+thiserror.workspace = true
