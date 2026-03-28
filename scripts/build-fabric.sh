@@ -68,21 +68,86 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Paths passed in from the build script
 # REACT_COMMON_DIR, HERMES_ROOT, HERMES_LIB_DIR are set via -D flags
 
-# --- Third-party dependencies ---
-
-# folly (RN ships a subset in ReactCommon/react/third-party-ndk/folly)
-# glog
-# fmt
-# double-conversion
-# These are built by RN's own CMake infrastructure.
-
-# Point to RN's third-party builds
+# Paths
 set(REACT_COMMON_DIR "${REACT_COMMON_DIR}")
+set(THIRD_PARTY "${THIRD_PARTY_DIR}")
 
-# RN's CMake utilities
-include(${REACT_COMMON_DIR}/cmake-utils/react-native-flags.cmake)
+# --- double-conversion ---
+file(GLOB DC_SRC "${THIRD_PARTY}/double-conversion-*/double-conversion/*.cc")
+add_library(double-conversion STATIC ${DC_SRC})
+target_include_directories(double-conversion PUBLIC
+    "${THIRD_PARTY}/double-conversion-3.3.0"
+)
 
-# --- JSI (from Hermes, core only — no folly dependency) ---
+# --- fmt (header-only mode is simpler but RN uses compiled) ---
+add_library(fmt STATIC
+    "${THIRD_PARTY}/fmt-11.0.2/src/format.cc"
+    "${THIRD_PARTY}/fmt-11.0.2/src/os.cc"
+)
+target_include_directories(fmt PUBLIC "${THIRD_PARTY}/fmt-11.0.2/include")
+
+# --- glog (minimal subset) ---
+# RN on Android uses a custom glog config. For iOS cross-compile,
+# we provide a minimal stub that routes to os_log / __android_log.
+add_library(glog STATIC
+    "${THIRD_PARTY}/glog-0.3.5/src/logging.cc"
+    "${THIRD_PARTY}/glog-0.3.5/src/raw_logging.cc"
+    "${THIRD_PARTY}/glog-0.3.5/src/vlog_is_on.cc"
+    "${THIRD_PARTY}/glog-0.3.5/src/utilities.cc"
+)
+target_include_directories(glog PUBLIC
+    "${THIRD_PARTY}/glog-0.3.5/src"
+)
+# glog needs a config.h — generate a minimal one
+file(WRITE "${CMAKE_BINARY_DIR}/glog-config/glog/logging.h"
+    "#pragma once\n#include \"${THIRD_PARTY}/glog-0.3.5/src/glog/logging.h\"\n")
+
+# --- folly_runtime (RN's ~25-file subset) ---
+set(FOLLY_ROOT "${THIRD_PARTY}/folly-2024.11.18.00")
+set(folly_runtime_SRC
+    ${FOLLY_ROOT}/folly/Conv.cpp
+    ${FOLLY_ROOT}/folly/Demangle.cpp
+    ${FOLLY_ROOT}/folly/FileUtil.cpp
+    ${FOLLY_ROOT}/folly/Format.cpp
+    ${FOLLY_ROOT}/folly/ScopeGuard.cpp
+    ${FOLLY_ROOT}/folly/SharedMutex.cpp
+    ${FOLLY_ROOT}/folly/String.cpp
+    ${FOLLY_ROOT}/folly/Unicode.cpp
+    ${FOLLY_ROOT}/folly/concurrency/CacheLocality.cpp
+    ${FOLLY_ROOT}/folly/container/detail/F14Table.cpp
+    ${FOLLY_ROOT}/folly/detail/FileUtilDetail.cpp
+    ${FOLLY_ROOT}/folly/detail/Futex.cpp
+    ${FOLLY_ROOT}/folly/detail/SplitStringSimd.cpp
+    ${FOLLY_ROOT}/folly/detail/UniqueInstance.cpp
+    ${FOLLY_ROOT}/folly/hash/SpookyHashV2.cpp
+    ${FOLLY_ROOT}/folly/json/dynamic.cpp
+    ${FOLLY_ROOT}/folly/json/json_pointer.cpp
+    ${FOLLY_ROOT}/folly/json/json.cpp
+    ${FOLLY_ROOT}/folly/lang/CString.cpp
+    ${FOLLY_ROOT}/folly/lang/Exception.cpp
+    ${FOLLY_ROOT}/folly/lang/SafeAssert.cpp
+    ${FOLLY_ROOT}/folly/lang/ToAscii.cpp
+    ${FOLLY_ROOT}/folly/memory/detail/MallocImpl.cpp
+    ${FOLLY_ROOT}/folly/net/NetOps.cpp
+    ${FOLLY_ROOT}/folly/portability/SysUio.cpp
+    ${FOLLY_ROOT}/folly/synchronization/SanitizeThread.cpp
+    ${FOLLY_ROOT}/folly/synchronization/ParkingLot.cpp
+    ${FOLLY_ROOT}/folly/system/AtFork.cpp
+    ${FOLLY_ROOT}/folly/system/ThreadId.cpp
+)
+add_library(folly_runtime STATIC ${folly_runtime_SRC})
+target_include_directories(folly_runtime PUBLIC ${FOLLY_ROOT})
+target_compile_options(folly_runtime PRIVATE
+    -DFOLLY_NO_CONFIG=1
+    -DFOLLY_HAVE_CLOCK_GETTIME=1
+    -DFOLLY_USE_LIBCPP=1
+    -DFOLLY_CFG_NO_COROUTINES=1
+    -DFOLLY_MOBILE=1
+    -DFOLLY_HAVE_PTHREAD=1
+)
+target_link_libraries(folly_runtime glog double-conversion fmt)
+
+# --- JSI (from Hermes, core only) ---
 add_library(jsi STATIC
     ${HERMES_ROOT}/API/jsi/jsi/jsi.cpp
 )
@@ -92,25 +157,20 @@ target_include_directories(jsi PUBLIC
 )
 
 # --- HermesABIRuntimeWrapper ---
-# Built as part of the Hermes build (needs Hermes internal headers).
-# Pre-built library at: vendor-lib/hermes/{platform}/libhermesABIRuntimeWrapper.a
+# Built as part of the Hermes build (needs internal headers).
+# Pre-built at: vendor-lib/hermes/{platform}/libhermesABIRuntimeWrapper.a
 
 # --- Yoga ---
-file(GLOB_RECURSE YOGA_SRC
-    "${REACT_COMMON_DIR}/yoga/yoga/*.cpp"
-)
+file(GLOB_RECURSE YOGA_SRC "${REACT_COMMON_DIR}/yoga/yoga/*.cpp")
 list(FILTER YOGA_SRC EXCLUDE REGEX "test")
 list(FILTER YOGA_SRC EXCLUDE REGEX "benchmark")
 add_library(yoga STATIC ${YOGA_SRC})
-target_include_directories(yoga PUBLIC
-    "${REACT_COMMON_DIR}/yoga"
-)
+target_include_directories(yoga PUBLIC "${REACT_COMMON_DIR}/yoga")
 
-# For now, create a summary target that confirms the build chain works.
-# Phase 1 will add the full renderer targets.
+# --- Summary target ---
 add_custom_target(ferrum_fabric_check ALL
-    DEPENDS jsi yoga
-    COMMENT "Ferrum Fabric dependencies built successfully (HermesABIRuntimeWrapper built separately via Hermes CMake)"
+    DEPENDS jsi yoga folly_runtime
+    COMMENT "Ferrum Fabric dependencies built"
 )
 CMAKE
 }
