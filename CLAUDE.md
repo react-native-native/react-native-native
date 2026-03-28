@@ -13,7 +13,13 @@ OS Process (Rust binary)
   └── SharedArrayBuffer channels  [zero-copy data pipelines]
 ```
 
-Key principle: no module bridge, no codegen, no JSI C++ layer. Rust calls the Hermes C ABI directly and registers plain `extern "C"` function pointers as JS globals.
+Key principle: Ferrum is an orchestrator, not a renderer. Rust boots Hermes, initializes the existing Fabric C++ and platform component views, starts the render loop, and gets out of the way. All rendering code, component views, prop handlers, and layout (Yoga) are existing RN code linked as libraries. No fork, no reimplementation.
+
+The new code Ferrum writes:
+1. Boot Hermes → HermesABIRuntimeWrapper → jsi::Runtime
+2. Init Scheduler, UIManagerBinding, ShadowTree, RuntimeScheduler without RCTHost
+3. Start the render loop (CADisplayLink / AChoreographer)
+4. Direct function pointer registration for native modules (additive, not replacing anything)
 
 ## Target Versions
 
