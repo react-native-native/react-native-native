@@ -163,8 +163,10 @@ dependencies = [
 name = "ferrum-core"
 version = "0.1.0"
 dependencies = [
+ "android_logger",
  "hermes-abi-rs",
  "log",
+ "oslog",
  "thiserror 2.0.18",
 ]
 

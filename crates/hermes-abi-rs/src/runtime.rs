@@ -261,7 +261,20 @@ static HOST_FUNCTION_VTABLE: HermesABIHostFunctionVTable = HermesABIHostFunction
 ///
 /// Owns the `*mut HermesABIRuntime` and releases it on drop.
 pub struct HermesRuntime {
-    ptr: *mut HermesABIRuntime,
+    pub(crate) ptr: *mut HermesABIRuntime,
+}
+
+impl HermesRuntime {
+    /// Wrap a raw `HermesABIRuntime*` without taking ownership.
+    ///
+    /// The caller is responsible for ensuring the pointer remains valid
+    /// and for NOT dropping this wrapper (use `std::mem::forget`).
+    ///
+    /// # Safety
+    /// `ptr` must be a valid, non-null pointer to a live Hermes runtime.
+    pub unsafe fn from_raw(ptr: *mut HermesABIRuntime) -> Self {
+        HermesRuntime { ptr }
+    }
 }
 
 // SAFETY: Hermes runtimes are not thread-safe internally, but we model

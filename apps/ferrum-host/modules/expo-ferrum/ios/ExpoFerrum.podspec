@@ -11,11 +11,23 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
 
-  # Rust static library — contains ferrum_bridge_init / ferrum_bridge_free_string
-  s.vendored_libraries = 'libferrum_ios.a'
+  # Vendored static libraries — survive expo prebuild since they live
+  # in modules/expo-ferrum/ios/ (not in the generated ios/ directory).
+  # Symlinks point to:
+  #   - libferrum_ios.a → target/aarch64-apple-ios/debug/ (Rust)
+  #   - libhermesabi.a etc. → vendor-lib/hermes/ios-arm64/ (Hermes C ABI)
+  s.vendored_libraries = [
+    'libferrum_ios.a',
+    'libhermesabi.a',
+    'libhermesvm_a.a',
+    'libhermesVMRuntime.a',
+    'libhermesABIRuntimeWrapper.a',
+    'libboost_context.a',
+  ]
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
+    'OTHER_LDFLAGS' => '$(inherited) -lc++',
   }
 
   s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
