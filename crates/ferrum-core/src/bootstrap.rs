@@ -42,8 +42,29 @@ impl FerumRuntime {
     // -----------------------------------------------------------------------
 
     fn register_builtins(&self) -> Result<()> {
+        self.register_print()?;
         self.register_rust_add()?;
         Ok(())
+    }
+
+    /// Override Hermes built-in `print()` to route output to the platform logger
+    /// (os_log on iOS, logcat on Android). The built-in writes to stdout which
+    /// is invisible on mobile.
+    fn register_print(&self) -> Result<()> {
+        self.hermes.register_global_fn("print", 1, |_rt, _this, args| {
+            // Phase 0: log number values directly, skip string extraction
+            // (crashes on Android — likely GrowableBuffer callback issue).
+            // Benchmark results come through as string concatenations from JS,
+            // so modify the JS bundle to store results in globals instead.
+            if let Some(val) = args.first() {
+                if let Some(n) = val.as_number() {
+                    log::info!("print: {n}");
+                } else {
+                    log::info!("print: [value]");
+                }
+            }
+            Ok(Value::Undefined)
+        })
     }
 
     /// Register `rust_add(a: number, b: number) -> number` as a JS global.

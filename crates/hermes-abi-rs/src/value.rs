@@ -216,4 +216,13 @@ impl Value {
             None
         }
     }
+
+    /// Returns a reference to the inner `JsString` if this value is a string.
+    pub fn as_js_string(&self) -> Option<&JsString> {
+        if let Value::String(s) = self {
+            Some(s)
+        } else {
+            None
+        }
+    }
 }

@@ -100,38 +100,49 @@ impl GrowableBuffer {
 // SliceBuffer — wraps a &[u8] as HermesABIBuffer for evaluate calls
 // ---------------------------------------------------------------------------
 
-/// An owning buffer that copies source bytes and appends a NUL terminator.
-/// The Hermes C ABI requires: "The buffer must have a past-the-end null
-/// terminator" for `evaluate_javascript_source`.
-struct OwnedBuffer {
+/// Heap-allocated buffer with NUL terminator, owned by Hermes after passing.
+/// Hermes calls `release` when it's done with the buffer (on runtime teardown).
+/// The Hermes C ABI requires a past-the-end null terminator for JS source.
+#[repr(C)]
+struct HeapBuffer {
     abi: HermesABIBuffer,
-    _data: Vec<u8>,
+    data: Vec<u8>,
 }
 
-unsafe extern "C" fn owned_buffer_release(_self: *mut HermesABIBuffer) {
-    // No-op: the Vec is dropped when OwnedBuffer is dropped.
+unsafe extern "C" fn heap_buffer_release(self_: *mut HermesABIBuffer) {
+    // SAFETY: `self_` is a pointer to the `abi` field of a `HeapBuffer`
+    // that was created via `Box::into_raw`. Hermes calls this exactly once
+    // when it no longer needs the buffer.
+    unsafe {
+        let _ = Box::from_raw(self_ as *mut HeapBuffer);
+    }
 }
 
-static OWNED_BUFFER_VTABLE: HermesABIBufferVTable = HermesABIBufferVTable {
-    release: owned_buffer_release,
+static HEAP_BUFFER_VTABLE: HermesABIBufferVTable = HermesABIBufferVTable {
+    release: heap_buffer_release,
 };
 
-impl OwnedBuffer {
-    fn new(data: &[u8]) -> Self {
-        // Copy data and append NUL terminator as required by Hermes ABI.
-        let mut vec = Vec::with_capacity(data.len() + 1);
-        vec.extend_from_slice(data);
-        vec.push(0); // past-the-end null terminator
-        let mut buf = OwnedBuffer {
+impl HeapBuffer {
+    /// Create a heap-allocated buffer. Returns a raw pointer to pass to Hermes.
+    /// Hermes takes ownership and frees it via the `release` callback.
+    fn new(source: &[u8]) -> *mut HermesABIBuffer {
+        let mut vec = Vec::with_capacity(source.len() + 1);
+        vec.extend_from_slice(source);
+        vec.push(0); // NUL terminator
+
+        let mut buf = Box::new(HeapBuffer {
             abi: HermesABIBuffer {
-                vtable: &OWNED_BUFFER_VTABLE,
-                data: std::ptr::null(), // set below
-                size: data.len(),       // size excludes the NUL
+                vtable: &HEAP_BUFFER_VTABLE,
+                data: std::ptr::null(),
+                size: source.len(),
             },
-            _data: vec,
-        };
-        buf.abi.data = buf._data.as_ptr();
-        buf
+            data: vec,
+        });
+        buf.abi.data = buf.data.as_ptr();
+        let ptr = Box::into_raw(buf);
+        // SAFETY: HeapBuffer is #[repr(C)] and `abi` is the first field,
+        // so the pointer to HeapBuffer == pointer to its `abi` field.
+        ptr as *mut HermesABIBuffer
     }
 }
 
@@ -381,14 +392,15 @@ impl HermesRuntime {
     /// ```
     pub fn evaluate_js(&self, source: &[u8], source_url: &str) -> Result<Value> {
         let url = CString::new(source_url).expect("source_url must not contain NUL");
-        let mut buf = OwnedBuffer::new(source);
+        // Heap-allocated buffer — Hermes takes ownership and frees via release callback.
+        let buf = HeapBuffer::new(source);
 
-        // SAFETY: `ptr` is a valid runtime; `buf.abi` lives for the call
-        // duration; `url` has no embedded NUL.
+        // SAFETY: `ptr` is valid; `buf` is a heap-allocated HermesABIBuffer
+        // that Hermes now owns; `url` has no embedded NUL.
         let result = unsafe {
             ((*(*self.ptr).vt).evaluate_javascript_source)(
                 self.ptr,
-                &mut buf.abi,
+                buf,
                 url.as_ptr(),
                 url.to_bytes().len(),
             )
@@ -410,13 +422,13 @@ impl HermesRuntime {
     /// compatible Hermes version. No validation is performed by the ABI.
     pub fn evaluate_bytecode(&self, bytecode: &[u8], source_url: &str) -> Result<Value> {
         let url = CString::new(source_url).expect("source_url must not contain NUL");
-        let mut buf = OwnedBuffer::new(bytecode);
+        let buf = HeapBuffer::new(bytecode);
 
         // SAFETY: same as evaluate_js above.
         let result = unsafe {
             ((*(*self.ptr).vt).evaluate_hermes_bytecode)(
                 self.ptr,
-                &mut buf.abi,
+                buf,
                 url.as_ptr(),
                 url.to_bytes().len(),
             )
@@ -428,6 +440,15 @@ impl HermesRuntime {
         }
 
         Ok(unsafe { Value::from_raw(result.value) })
+    }
+
+    /// Extract a UTF-8 string from a JS string value.
+    ///
+    /// Returns `None` if the value is not a string.
+    pub fn value_to_string(&self, val: &Value) -> Option<String> {
+        let js_str = val.as_js_string()?;
+        // SAFETY: js_str.inner is a valid HermesABIString from this runtime.
+        unsafe { self.string_to_rust(&js_str.inner).ok() }
     }
 
     /// Get the JS global object.

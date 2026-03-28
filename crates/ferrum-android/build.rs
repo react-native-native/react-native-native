@@ -21,7 +21,8 @@ fn link_hermes_android() {
             println!("cargo:rustc-link-lib=static=hermesVMRuntime");
             println!("cargo:rustc-link-lib=static=boost_context");
             // C++ standard library (Hermes internals)
-            println!("cargo:rustc-link-lib=c++_shared");
+            println!("cargo:rustc-link-lib=static=c++_static");
+            println!("cargo:rustc-link-lib=static=c++abi");
             println!("cargo:warning=ferrum-android: linking Hermes from {lib_dir}");
         }
         Err(_) => {
