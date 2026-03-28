@@ -10,26 +10,24 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
+  # Depend on hermes-engine so we get its headers and link against same VM
+  s.dependency 'hermes-engine'
 
-  # Vendored static libraries — survive expo prebuild since they live
-  # in modules/expo-ferrum/ios/ (not in the generated ios/ directory).
-  # Symlinks point to:
-  #   - libferrum_ios.a → target/aarch64-apple-ios/debug/ (Rust)
-  #   - libhermesabi.a etc. → vendor-lib/hermes/ios-arm64/ (Hermes C ABI)
+  # Only the Rust static library is vendored.
+  # hermes_vtable.cpp and HermesABIRuntimeWrapper.cpp are compiled from source
+  # alongside the pods' Hermes, ensuring ABI compatibility.
   s.vendored_libraries = [
     'libferrum_ios.a',
     'libhermesabi.a',
-    'libhermesvm_a.a',
-    'libhermesVMRuntime.a',
     'libhermesABIRuntimeWrapper.a',
-    'libboost_context.a',
   ]
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'OTHER_LDFLAGS' => '$(inherited) -lc++',
-    # Hermes C ABI headers (from vendored submodule)
-    'HEADER_SEARCH_PATHS' => '$(inherited) "$(PODS_ROOT)/../../../../vendor/hermes/API/hermes_abi" "$(PODS_ROOT)/../../../../vendor/hermes/API/jsi" "$(PODS_ROOT)/../../../../vendor/hermes/API" "$(PODS_ROOT)/../../../../vendor/hermes/public" "$(PODS_ROOT)/Headers/Public/React-jsi" "$(PODS_ROOT)/Headers/Public/React-RuntimeCore" "$(PODS_ROOT)/Headers/Public/React-jsitooling" "$(PODS_ROOT)/Headers/Public/React-jsinspector" "$(PODS_ROOT)/Headers/Public/React-jsinspectorcdp"',
+    'OTHER_LDFLAGS' => '$(inherited) -lc++ -framework hermesvm',
+    # Hermes internal headers needed by hermes_vtable.cpp
+    'HEADER_SEARCH_PATHS' => '$(inherited) "$(PODS_ROOT)/../../../../vendor/hermes/API/hermes_abi" "$(PODS_ROOT)/../../../../vendor/hermes/API/jsi" "$(PODS_ROOT)/../../../../vendor/hermes/API" "$(PODS_ROOT)/../../../../vendor/hermes/public" "$(PODS_ROOT)/../../../../vendor/hermes/include" "$(PODS_ROOT)/../../../../vendor/hermes/lib" "$(PODS_ROOT)/../../../../vendor/hermes/external/llvh/include" "$(PODS_ROOT)/../../../../vendor/hermes/build_ios_arm64/external/llvh/include" "$(PODS_ROOT)/../../../../vendor/hermes/external/flowparser/include" "$(PODS_ROOT)/../../../../vendor/hermes" "$(PODS_ROOT)/Headers/Public/React-jsi" "$(PODS_ROOT)/Headers/Public/React-RuntimeCore" "$(PODS_ROOT)/Headers/Public/React-jsitooling" "$(PODS_ROOT)/Headers/Public/React-jsinspector" "$(PODS_ROOT)/Headers/Public/React-jsinspectorcdp" "$(PODS_ROOT)/Headers/Public/hermes-engine"',
+    'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) HERMES_ENABLE_DEBUGGER=0',
   }
 
   s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"

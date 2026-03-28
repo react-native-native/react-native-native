@@ -19,8 +19,5 @@
   "devDependencies": {
     "@types/react": "^19.2.14",
     "typescript": "^5.9.3"
-  },
-  "overrides": {
-    "hermes-compiler": "250829098.0.4"
   }
 }
