@@ -8,14 +8,17 @@ public class ExpoFerrumModule: Module {
       return FerrumBridge.shared.benchmarkResult
     }
 
-    Function("getCallOverheadMicros") {
-      return FerrumBridge.shared.callOverheadMicros
+    // OnCreate fires when the module is loaded.
+    // The runtime may not be available yet, but we can set up state.
+    OnCreate {
+      NSLog("[Ferrum] ExpoFerrumModule OnCreate")
+      FerrumBridge.shared.benchmarkResult = "Ferrum active — waiting for runtime"
     }
   }
 }
 
-/// AppDelegate lifecycle hook — intercepts createJSRuntimeFactory to inject
-/// FerrumRuntimeFactory instead of the default HermesInstance.
+/// AppDelegate lifecycle hook.
+/// didInitializeRuntime fires BEFORE bundle evaluation with jsi::Runtime&.
 public class ExpoFerrumAppDelegateSubscriber: BaseExpoAppDelegateSubscriber, ExpoAppDelegateSubscriberProtocol {
 
   public func application(
@@ -23,18 +26,11 @@ public class ExpoFerrumAppDelegateSubscriber: BaseExpoAppDelegateSubscriber, Exp
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     NSLog("[Ferrum] AppDelegateSubscriber: didFinishLaunchingWithOptions")
-    NSLog("[Ferrum] FerrumRuntimeFactory will be injected via createJSRuntimeFactory override")
-
-    FerrumBridge.shared.benchmarkResult = "Ferrum orchestrator active — Hermes V1 C ABI"
+    // Runtime registration happens in didInitializeRuntime via the
+    // ExpoReactNativeFactory's RCTHostRuntimeDelegate callback.
+    // We just mark that Ferrum is active.
+    FerrumBridge.shared.benchmarkResult = "Ferrum orchestrator active — Hermes C ABI"
     return true
-  }
-
-  /// Override createJSRuntimeFactory to return FerrumRuntimeFactory.
-  /// This is the orchestrator injection point — Ferrum creates Hermes via
-  /// the C ABI, registers Rust fn ptrs, then wraps as jsi::Runtime.
-  @objc public func createJSRuntimeFactory() -> UnsafeMutableRawPointer {
-    NSLog("[Ferrum] createJSRuntimeFactory: returning FerrumRuntimeFactory")
-    return jsrt_create_ferrum_factory()
   }
 }
 
@@ -44,12 +40,6 @@ class FerrumBridge {
   var callOverheadMicros: Double = -1.0
 }
 
-// C FFI declarations
-@_silgen_name("ferrum_bridge_init")
-func ferrum_bridge_init() -> UnsafeMutablePointer<CChar>
-
-@_silgen_name("ferrum_bridge_free_string")
-func ferrum_bridge_free_string(_ ptr: UnsafeMutablePointer<CChar>)
-
-@_silgen_name("jsrt_create_ferrum_factory")
-func jsrt_create_ferrum_factory() -> UnsafeMutableRawPointer
+// Rust FFI
+@_silgen_name("ferrum_install_on_runtime")
+func ferrum_install_on_runtime(_ runtime: UnsafeMutableRawPointer)
