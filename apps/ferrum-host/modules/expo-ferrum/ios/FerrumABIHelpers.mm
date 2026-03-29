@@ -263,6 +263,43 @@ static HermesABIValue objcToValue(
     v.data.pointer = jsArr.pointer;
     return v;
   }
+  if ([obj isKindOfClass:[NSDictionary class]]) {
+    NSDictionary *dict = obj;
+    auto objOrErr = vt->create_object(rt);
+    if (objOrErr.ptr_or_error & 1) {
+      HermesABIValue v;
+      v.kind = HermesABIValueKindNull;
+      return v;
+    }
+    HermesABIObject jsObj;
+    jsObj.pointer = (HermesABIManagedPointer *)objOrErr.ptr_or_error;
+    for (NSString *key in dict) {
+      auto strOrErr = vt->create_string_from_utf8(
+          rt, (const uint8_t *)[key UTF8String],
+          [key lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+      if (strOrErr.ptr_or_error & 1) continue;
+      auto pnOrErr = vt->create_propnameid_from_string(
+          rt, (HermesABIString){(HermesABIManagedPointer *)strOrErr.ptr_or_error});
+      if (pnOrErr.ptr_or_error & 1) {
+        ((HermesABIManagedPointer *)strOrErr.ptr_or_error)->vtable->invalidate(
+            (HermesABIManagedPointer *)strOrErr.ptr_or_error);
+        continue;
+      }
+      HermesABIValue val = objcToValue(rt, vt, dict[key]);
+      vt->set_object_property_from_propnameid(
+          rt, jsObj,
+          (HermesABIPropNameID){(HermesABIManagedPointer *)pnOrErr.ptr_or_error},
+          &val);
+      ((HermesABIManagedPointer *)strOrErr.ptr_or_error)->vtable->invalidate(
+          (HermesABIManagedPointer *)strOrErr.ptr_or_error);
+      ((HermesABIManagedPointer *)pnOrErr.ptr_or_error)->vtable->invalidate(
+          (HermesABIManagedPointer *)pnOrErr.ptr_or_error);
+    }
+    HermesABIValue v;
+    v.kind = HermesABIValueKindObject;
+    v.data.pointer = jsObj.pointer;
+    return v;
+  }
   // Fallback
   HermesABIValue v;
   v.kind = HermesABIValueKindNull;

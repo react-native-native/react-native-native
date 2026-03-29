@@ -1,139 +1,212 @@
 import { StatusBar } from "expo-status-bar";
 import { useState, useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import {
+  StyleSheet,
+  Text,
+  View,
+  Vibration,
+  Clipboard,
+  Pressable,
+  AppState,
+} from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // --- Synchronous benchmarks (run at module load) ---
 
-// Rust C ABI global
 const rustResult = global.rust_add(40, 2);
 const iterations = 100000;
-let start = Date.now();
+let start = performance.now();
 for (let i = 0; i < iterations; i++) global.rust_add(i, i);
-const rustUs = (((Date.now() - start) * 1000) / iterations).toFixed(2);
+const rustUs = (((performance.now() - start) * 1000) / iterations).toFixed(2);
 
-// FerrumBench C ABI path
-let abiResult = "not available";
-let abiUs = "N/A";
+let benchUs = "N/A";
 try {
-  if (global.__ferrumGetModule) {
-    const abiBench = global.__ferrumGetModule("FerrumBench");
-    if (abiBench) {
-      abiResult = `add(40,2) = ${abiBench.add(40, 2)}`;
-      start = Date.now();
-      for (let i = 0; i < iterations; i++) abiBench.add(i, i);
-      abiUs = (((Date.now() - start) * 1000) / iterations).toFixed(2);
-    }
+  const abiBench = global.__ferrumGetModule?.("FerrumBench");
+  if (abiBench) {
+    start = performance.now();
+    for (let i = 0; i < iterations; i++) abiBench.add(i, i);
+    benchUs = (((performance.now() - start) * 1000) / iterations).toFixed(2);
   }
-} catch (e) {
-  abiResult = `Error: ${e.message}`;
-}
+} catch (e) {}
+
+// --- C ABI modules ---
+const abiVibration = global.__ferrumGetModule?.("Vibration");
+const abiClipboard = global.__ferrumGetModule?.("Clipboard");
+const abiAppState = global.__ferrumGetModule?.("AppState");
 
 export default function App() {
-  const [jsiStorage, setJsiStorage] = useState("testing...");
-  const [abiStorage, setAbiStorage] = useState("testing...");
+  const [storageResult, setStorageResult] = useState("testing...");
+  const [vibrationResult, setVibrationResult] = useState("tap to test");
+  const [clipboardResult, setClipboardResult] = useState("tap to test");
+  const [appStateResult, setAppStateResult] = useState("tap to test");
 
   useEffect(() => {
     testAsyncStorage();
   }, []);
 
   async function testAsyncStorage() {
-    const testKey = "ferrum_bench";
-    const testValue = `hello_${Date.now()}`;
-    console.log("[Ferrum] testAsyncStorage starting");
-
     const rounds = 20;
+    const key = "ferrum_bench";
+    const val = "test_value";
 
-    // Helper: callback-based set+get as a Promise
-    function abiSetGet(mod, key, value) {
-      return new Promise((resolve, reject) => {
-        mod.multiSet([[key, value]], (...setArgs) => {
-          mod.multiGet([key], (...getArgs) => {
-            resolve(getArgs);
-          });
+    function abiSetGet(mod, k, v) {
+      return new Promise((resolve) => {
+        mod.multiSet([[k, v]], () => {
+          mod.multiGet([k], (...args) => resolve(args));
         });
       });
     }
 
-    // --- JSI path: standard AsyncStorage API ---
+    // JSI
+    let jsiMs = "?";
     try {
-      // Warm up
-      await AsyncStorage.setItem(testKey + "_jsi", testValue);
-      await AsyncStorage.getItem(testKey + "_jsi");
-
-      const jsiStart = Date.now();
+      await AsyncStorage.setItem(key + "_jsi", val);
+      await AsyncStorage.getItem(key + "_jsi");
+      const t = performance.now();
       for (let i = 0; i < rounds; i++) {
-        await AsyncStorage.setItem(testKey + "_jsi", testValue + i);
-        await AsyncStorage.getItem(testKey + "_jsi");
+        await AsyncStorage.setItem(key + "_jsi", val + i);
+        await AsyncStorage.getItem(key + "_jsi");
       }
-      const jsiMs = ((Date.now() - jsiStart) / rounds).toFixed(1);
-      const jsiRead = await AsyncStorage.getItem(testKey + "_jsi");
-      setJsiStorage(`"${jsiRead}" — ${jsiMs}ms avg (${rounds}x)`);
+      jsiMs = ((performance.now() - t) / rounds).toFixed(1);
     } catch (e) {
-      setJsiStorage(`Error: ${e.message}`);
+      jsiMs = "err";
     }
 
-    // --- C ABI path: direct via __ferrumGetModule ---
+    // ABI
+    let abiMs = "?";
     try {
-      if (!global.__ferrumGetModule) {
-        setAbiStorage("__ferrumGetModule not installed");
-        return;
+      const m = global.__ferrumGetModule?.("RNCAsyncStorage");
+      if (m) {
+        await abiSetGet(m, key + "_abi", val);
+        const t = performance.now();
+        for (let i = 0; i < rounds; i++) {
+          await abiSetGet(m, key + "_abi", val + i);
+        }
+        abiMs = ((performance.now() - t) / rounds).toFixed(1);
       }
-      const abiMod = global.__ferrumGetModule("RNCAsyncStorage");
-      if (!abiMod) {
-        setAbiStorage("module not found");
-        return;
-      }
-
-      // Warm up
-      await abiSetGet(abiMod, testKey + "_abi", testValue);
-
-      const abiStart = Date.now();
-      for (let i = 0; i < rounds; i++) {
-        await abiSetGet(abiMod, testKey + "_abi", testValue + i);
-      }
-      const abiMs = ((Date.now() - abiStart) / rounds).toFixed(1);
-      const lastResult = await abiSetGet(abiMod, testKey + "_abi", "final");
-      let readValue = "?";
-      try {
-        const result = lastResult[1];
-        const first = result?.[0] || result?.["0"];
-        readValue = first?.[1] || first?.["1"] || "?";
-      } catch (e) {
-        readValue = "parse error";
-      }
-      setAbiStorage(`"${readValue}" — ${abiMs}ms avg (${rounds}x)`);
     } catch (e) {
-      setAbiStorage(`Error: ${e.message}`);
+      abiMs = "err";
     }
+
+    setStorageResult(`JSI: ${jsiMs}ms · ABI: ${abiMs}ms (${rounds}x)`);
+  }
+
+  function testVibration() {
+    const rounds = 20;
+
+    // JSI path
+    const jsiStart = performance.now();
+    for (let i = 0; i < rounds; i++) Vibration.vibrate(1);
+    const jsiUs = (((performance.now() - jsiStart) * 1000) / rounds).toFixed(1);
+
+    // ABI path
+    let abiUs = "N/A";
+    if (abiVibration) {
+      const abiStart = performance.now();
+      for (let i = 0; i < rounds; i++) abiVibration.vibrate(1);
+      abiUs = (((performance.now() - abiStart) * 1000) / rounds).toFixed(1);
+    }
+
+    setVibrationResult(`JSI: ${jsiUs}μs · ABI: ${abiUs}μs (${rounds}x)`);
+  }
+
+  function testClipboard() {
+    const rounds = 20;
+
+    // JSI path
+    const jsiStart = performance.now();
+    for (let i = 0; i < rounds; i++) Clipboard.setString("jsi_" + i);
+    const jsiUs = (((performance.now() - jsiStart) * 1000) / rounds).toFixed(1);
+
+    // ABI path
+    let abiUs = "N/A";
+    if (abiClipboard) {
+      const abiStart = performance.now();
+      for (let i = 0; i < rounds; i++) abiClipboard.setString("abi_" + i);
+      abiUs = (((performance.now() - abiStart) * 1000) / rounds).toFixed(1);
+    }
+
+    setClipboardResult(`JSI: ${jsiUs}μs · ABI: ${abiUs}μs (${rounds}x)`);
+  }
+
+  function testAppState() {
+    if (!abiAppState) {
+      setAppStateResult("module not found");
+      return;
+    }
+
+    const rounds = 20;
+    let completed = 0;
+    let jsiTotal = 0;
+    let abiTotal = 0;
+
+    // Run both in sequence
+    function runJSI(i) {
+      if (i >= rounds) {
+        runABI(0);
+        return;
+      }
+      const t = performance.now();
+      // JSI: AppState.currentState is sync
+      const _ = AppState.currentState;
+      jsiTotal += performance.now() - t;
+      runJSI(i + 1);
+    }
+
+    function runABI(i) {
+      if (i >= rounds) {
+        const jsiUs = ((jsiTotal * 1000) / rounds).toFixed(1);
+        const abiUs = ((abiTotal * 1000) / rounds).toFixed(1);
+        setAppStateResult(`JSI: ${jsiUs}μs · ABI: ${abiUs}μs (${rounds}x)`);
+        return;
+      }
+      const t = performance.now();
+      abiAppState.getCurrentAppState(
+        (state) => {
+          abiTotal += performance.now() - t;
+          runABI(i + 1);
+        },
+        () => {
+          abiTotal += performance.now() - t;
+          runABI(i + 1);
+        }
+      );
+    }
+
+    runJSI(0);
   }
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Project Ferrum</Text>
-      <Text style={styles.subtitle}>Rust-hosted Hermes inside Expo</Text>
+      <Text style={styles.subtitle}>C ABI TurboModule Bridges</Text>
 
       <View style={styles.resultBox}>
-        <Text style={styles.label}>Rust C ABI (global)</Text>
-        <Text style={styles.result}>rust_add(40, 2) = {rustResult}</Text>
-        <Text style={styles.benchmark}>{rustUs} μs/call</Text>
+        <Text style={styles.label}>Sync (100K calls)</Text>
+        <Text style={styles.result}>
+          Rust: {rustUs}μs · Bench: {benchUs}μs
+        </Text>
       </View>
 
       <View style={styles.resultBox}>
-        <Text style={styles.label}>FerrumBench C ABI</Text>
-        <Text style={styles.result}>{abiResult}</Text>
-        <Text style={styles.benchmark}>{abiUs} μs/call</Text>
+        <Text style={styles.label}>AsyncStorage (set+get)</Text>
+        <Text style={styles.result}>{storageResult}</Text>
       </View>
 
-      <View style={styles.resultBox}>
-        <Text style={styles.label}>AsyncStorage — JSI path</Text>
-        <Text style={styles.result}>{jsiStorage}</Text>
-      </View>
+      <Pressable style={styles.resultBox} onPress={testVibration}>
+        <Text style={styles.label}>Vibration.vibrate(1) — tap</Text>
+        <Text style={styles.result}>{vibrationResult}</Text>
+      </Pressable>
 
-      <View style={styles.resultBox}>
-        <Text style={styles.label}>AsyncStorage — C ABI path</Text>
-        <Text style={styles.result}>{abiStorage}</Text>
-      </View>
+      <Pressable style={styles.resultBox} onPress={testClipboard}>
+        <Text style={styles.label}>Clipboard.setString() — tap</Text>
+        <Text style={styles.result}>{clipboardResult}</Text>
+      </Pressable>
+
+      <Pressable style={styles.resultBox} onPress={testAppState}>
+        <Text style={styles.label}>AppState — tap</Text>
+        <Text style={styles.result}>{appStateResult}</Text>
+      </Pressable>
 
       <StatusBar style="light" />
     </View>
@@ -147,43 +220,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
-    gap: 12,
+    gap: 10,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: "700",
     color: "#e94560",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: "#8888aa",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   resultBox: {
     backgroundColor: "#16213e",
     borderRadius: 12,
-    padding: 16,
+    padding: 14,
     width: "100%",
   },
   label: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
     color: "#e94560",
     textTransform: "uppercase",
     marginBottom: 4,
   },
   result: {
-    fontSize: 18,
+    fontSize: 15,
     fontFamily: "Courier",
     color: "#4ecca3",
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  benchmark: {
-    fontSize: 14,
-    fontFamily: "Courier",
-    color: "#8888aa",
     textAlign: "center",
   },
 });

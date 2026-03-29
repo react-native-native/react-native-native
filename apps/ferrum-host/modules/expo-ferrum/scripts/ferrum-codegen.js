@@ -2,8 +2,8 @@
 /**
  * Ferrum codegen runner.
  *
- * Parses TurboModule TypeScript specs directly (same parser as RN codegen),
- * then runs our C ABI bridge generator to produce Ferrum bridge files.
+ * Parses TurboModule specs (TypeScript and Flow) using the same parsers as
+ * react-native-codegen, then runs our C ABI bridge generator.
  *
  * Invoked from ExpoFerrum.podspec script_phase (before compile).
  */
@@ -40,38 +40,58 @@ if (!codegenRoot) {
   process.exit(0);
 }
 
-// Load parser and our generator
+// Load parsers and our generator
 const {TypeScriptParser} = require(path.join(codegenRoot, 'lib', 'parsers', 'typescript', 'parser'));
+const {FlowParser} = require(path.join(codegenRoot, 'lib', 'parsers', 'flow', 'parser'));
 const ferrumGenerator = require('./GenerateModuleFerrumABI');
 
 const tsParser = new TypeScriptParser();
+const flowParser = new FlowParser();
 
 // Output directory
 const outputDir = path.resolve(moduleRoot, 'ios', 'generated');
 fs.mkdirSync(outputDir, {recursive: true});
 
 console.log('[Ferrum Codegen] Project root:', projectRoot);
-console.log('[Ferrum Codegen] Codegen root:', codegenRoot);
 console.log('[Ferrum Codegen] Output dir:', outputDir);
 
 // Find all TurboModule specs in the project and its dependencies
 const specPatterns = [
-  // App's own specs
+  // App's own specs (TypeScript)
   path.join(projectRoot, 'src', 'specs', 'Native*.ts'),
   path.join(projectRoot, 'src', 'specs', 'Native*.tsx'),
-  // Also check common locations
   path.join(projectRoot, 'specs', 'Native*.ts'),
-  // Installed packages with TurboModule specs
-  path.join(projectRoot, 'node_modules', '@react-native-async-storage', 'async-storage', 'src', 'Native*.ts'),
-  // Generic: any package with Native* specs in src/
+
+  // Installed packages (TypeScript)
   path.join(projectRoot, 'node_modules', '*', 'src', 'Native*.ts'),
   path.join(projectRoot, 'node_modules', '@*', '*', 'src', 'Native*.ts'),
+
+  // Built-in React Native modules (Flow)
+  path.join(projectRoot, 'node_modules', 'react-native', 'src', 'private', 'specs_DEPRECATED', 'modules', 'Native*.js'),
+  path.join(projectRoot, 'node_modules', 'react-native', 'Libraries', '*', 'Native*.js'),
+  path.join(projectRoot, 'node_modules', 'react-native', 'Libraries', 'NativeModules', 'specs', 'Native*.js'),
 ];
 
+// Deduplicate by basename (re-exports point to the same spec)
 let specFiles = [];
+const seenBasenames = new Set();
 for (const pattern of specPatterns) {
-  const found = glob.sync(pattern);
-  specFiles = specFiles.concat(found);
+  for (const file of glob.sync(pattern)) {
+    const basename = path.basename(file, path.extname(file));
+    // Skip re-export wrappers (they just re-export from specs_DEPRECATED)
+    const content = fs.readFileSync(file, 'utf8');
+    if (content.includes('export * from') && content.includes('specs_DEPRECATED')) {
+      continue;
+    }
+    // Skip non-TurboModule specs
+    if (!content.includes('TurboModule') && !content.includes('extends TurboModule')) {
+      continue;
+    }
+    if (!seenBasenames.has(basename)) {
+      seenBasenames.add(basename);
+      specFiles.push(file);
+    }
+  }
 }
 
 if (specFiles.length === 0) {
@@ -85,11 +105,14 @@ let totalBridgeFiles = 0;
 
 for (const specFile of specFiles) {
   const basename = path.basename(specFile, path.extname(specFile));
+  const ext = path.extname(specFile);
   console.log(`[Ferrum Codegen] Parsing ${basename}...`);
 
   try {
-    // Parse the TypeScript spec to a schema
-    const schema = tsParser.parseFile(specFile);
+    // Pick parser based on file extension
+    const parser = (ext === '.ts' || ext === '.tsx') ? tsParser : flowParser;
+    const schema = parser.parseFile(specFile);
+
     if (!schema || !schema.modules || Object.keys(schema.modules).length === 0) {
       console.log(`[Ferrum Codegen]   No modules found in ${basename}`);
       continue;
@@ -115,7 +138,7 @@ for (const specFile of specFiles) {
       totalBridgeFiles++;
     }
   } catch (err) {
-    console.warn(`[Ferrum Codegen]   Error processing ${basename}: ${err.message}`);
+    console.warn(`[Ferrum Codegen]   Error: ${err.message}`);
   }
 }
 
