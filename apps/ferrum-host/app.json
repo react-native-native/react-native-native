@@ -26,6 +26,8 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": []
+    "plugins": [
+      "./plugins/withFerrumFactory"
+    ]
   }
 }

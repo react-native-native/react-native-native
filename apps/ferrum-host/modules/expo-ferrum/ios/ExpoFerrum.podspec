@@ -16,10 +16,10 @@ Pod::Spec.new do |s|
   # Only the Rust static library is vendored.
   # hermes_vtable.cpp and HermesABIRuntimeWrapper.cpp are compiled from source
   # alongside the pods' Hermes, ensuring ABI compatibility.
+  # Only Rust library vendored. hermesabi symbols come from hermesvm.framework
+  # (compiled into it via our vendored Hermes CMakeLists change).
   s.vendored_libraries = [
     'libferrum_ios.a',
-    'libhermesabi.a',
-    'libhermesABIRuntimeWrapper.a',
   ]
 
   s.pod_target_xcconfig = {
