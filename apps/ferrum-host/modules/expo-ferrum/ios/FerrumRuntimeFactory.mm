@@ -179,7 +179,8 @@ struct FerrumPassthroughCtx : HermesABIHostFunction {
 // ---------------------------------------------------------------------------
 
 struct FerrumFFICtx : HermesABIHostFunction {
-  FerrumDispatchInfo *dispatchInfo;
+  // Inline the dispatch info — single allocation, no pointer chasing
+  FerrumDispatchInfo info;
 
   static HermesABIValueOrError call(
       HermesABIHostFunction *self,
@@ -188,13 +189,11 @@ struct FerrumFFICtx : HermesABIHostFunction {
       const HermesABIValue *args,
       size_t count) {
     auto *ctx = static_cast<FerrumFFICtx *>(self);
-    return ferrum_dispatch_call(ctx->dispatchInfo, abiRt, g_abiVt, args, count);
+    return ctx->info.callFn(&ctx->info, abiRt, g_abiVt, args, count);
   }
 
   static void release(HermesABIHostFunction *self) {
-    auto *ctx = static_cast<FerrumFFICtx *>(self);
-    ferrum_dispatch_free(ctx->dispatchInfo);
-    delete ctx;
+    delete static_cast<FerrumFFICtx *>(self);
   }
 
   static constexpr HermesABIHostFunctionVTable kVTable = {release, call};
@@ -218,17 +217,18 @@ static bool registerFFIOnObject(
 
   auto *ctx = new FerrumFFICtx();
   ctx->vtable = &FerrumFFICtx::kVTable;
-  ctx->dispatchInfo = info;
+  ctx->info = *info; // copy inline — no pointer chasing at call time
+  ferrum_dispatch_free(info);
 
   HermesABIPropNameID propName = makePropNameID(methodName);
   if (!propName.pointer) {
-    ferrum_dispatch_free(info);
     delete ctx;
     return false;
   }
 
   auto fnOrErr = g_abiVt->create_function_from_host_function(
-      g_abiRt, propName, argCount, ctx);
+      g_abiRt, propName, argCount,
+      static_cast<HermesABIHostFunction *>(ctx));
   if (fnOrErr.ptr_or_error & 1) {
     releasePointer(propName.pointer);
     return false;
