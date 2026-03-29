@@ -8,6 +8,7 @@ import {
   Clipboard,
   Pressable,
   AppState,
+  NativeModules,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -30,9 +31,15 @@ try {
 } catch (e) {}
 
 // --- C ABI modules ---
+let cachedV1Bench = null;
+let cachedV2Bench = null;
 const abiVibration = global.__ferrumGetModule?.("Vibration");
 const abiClipboard = global.__ferrumGetModule?.("Clipboard");
 const abiAppState = global.__ferrumGetModule?.("AppState");
+
+// V2: passthrough (reuses existing hostFn, no type reimplementation)
+const v2Vibration = global.__ferrumGetModuleV2?.("Vibration");
+const v2Clipboard = global.__ferrumGetModuleV2?.("Clipboard");
 
 export default function App() {
   const [storageResult, setStorageResult] = useState("testing...");
@@ -94,31 +101,48 @@ export default function App() {
   function testVibration() {
     const rounds = 20;
 
-    // JSI path
-    const jsiStart = performance.now();
-    for (let i = 0; i < rounds; i++) Vibration.vibrate(1);
-    const jsiUs = (((performance.now() - jsiStart) * 1000) / rounds).toFixed(1);
+    // FerrumBench.add via all 3 paths — pure arithmetic, no hardware
+    if (!cachedV2Bench) cachedV2Bench = global.__ferrumGetModuleV2?.("FerrumBench");
+    if (!cachedV1Bench) cachedV1Bench = global.__ferrumGetModule?.("FerrumBench");
+    const v2Bench = cachedV2Bench;
+    const v1Bench = cachedV1Bench;
+    const jsiBench = NativeModules.FerrumBench;
 
-    // ABI path
-    let abiUs = "N/A";
-    if (abiVibration) {
-      const abiStart = performance.now();
-      for (let i = 0; i < rounds; i++) abiVibration.vibrate(1);
-      abiUs = (((performance.now() - abiStart) * 1000) / rounds).toFixed(1);
+    let jsiUs = "N/A", abiUs2 = "N/A", v2Us = "N/A";
+
+    if (jsiBench) {
+      jsiBench.add(1, 1); // warm
+      const t = performance.now();
+      for (let i = 0; i < rounds; i++) jsiBench.add(i, i);
+      jsiUs = (((performance.now() - t) * 1000) / rounds).toFixed(2);
     }
 
-    setVibrationResult(`JSI: ${jsiUs}μs · ABI: ${abiUs}μs (${rounds}x)`);
+    if (v1Bench) {
+      {
+        v1Bench.add(1, 1);
+        const t = performance.now();
+        for (let i = 0; i < rounds; i++) v1Bench.add(i, i);
+        abiUs2 = (((performance.now() - t) * 1000) / rounds).toFixed(2);
+      }
+    }
+
+    if (v2Bench) {
+      v2Bench.add(1, 1);
+      const t = performance.now();
+      for (let i = 0; i < rounds; i++) v2Bench.add(i, i);
+      v2Us = (((performance.now() - t) * 1000) / rounds).toFixed(2);
+    }
+
+    setVibrationResult(`JSI: ${jsiUs} · V1: ${abiUs2} · V2: ${v2Us} μs (add)`);
   }
 
   function testClipboard() {
     const rounds = 20;
 
-    // JSI path
     const jsiStart = performance.now();
     for (let i = 0; i < rounds; i++) Clipboard.setString("jsi_" + i);
     const jsiUs = (((performance.now() - jsiStart) * 1000) / rounds).toFixed(1);
 
-    // ABI path
     let abiUs = "N/A";
     if (abiClipboard) {
       const abiStart = performance.now();
@@ -126,7 +150,14 @@ export default function App() {
       abiUs = (((performance.now() - abiStart) * 1000) / rounds).toFixed(1);
     }
 
-    setClipboardResult(`JSI: ${jsiUs}μs · ABI: ${abiUs}μs (${rounds}x)`);
+    let v2Us = "N/A";
+    if (v2Clipboard) {
+      const v2Start = performance.now();
+      for (let i = 0; i < rounds; i++) v2Clipboard.setString("v2_" + i);
+      v2Us = (((performance.now() - v2Start) * 1000) / rounds).toFixed(1);
+    }
+
+    setClipboardResult(`JSI: ${jsiUs} · V1: ${abiUs} · V2: ${v2Us} μs`);
   }
 
   function testAppState() {

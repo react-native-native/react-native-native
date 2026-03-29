@@ -13,8 +13,10 @@
 #include <hermes_abi/hermes_abi.h>
 #include <jsi/jsi.h>
 #include <string>
+#include <chrono>
 
 #import "FerrumABIRegistry.h"
+#import "FerrumFFIDispatch.h"
 
 // For ObjCTurboModule::instance_ extraction
 #include <ReactCommon/TurboModule.h>
@@ -74,6 +76,209 @@ struct FerrumHostFunctionCtx : HermesABIHostFunction {
 };
 
 // ---------------------------------------------------------------------------
+// V2: Generic passthrough trampoline
+// ---------------------------------------------------------------------------
+// Captures the EXISTING jsi::Function (which contains the hostFn with all
+// type logic). Uses a HermesABIRuntimeWrapper (which IS a jsi::Runtime) to
+// convert ABI↔JSI values using the same mechanism as the standard path.
+//
+// The VM dispatches to C ABI (bypassing HFContext/std::function/try-catch),
+// the wrapper converts args, we call the original hostFn, wrapper converts
+// result. Zero type reimplementation — all complexity stays in hostFn.
+
+// The standard HermesRuntime — stored for the passthrough trampoline
+static facebook::jsi::Runtime *g_jsiRuntime = nullptr;
+
+// Forward declarations for helpers defined later in this file
+static void releasePointer(HermesABIManagedPointer *ptr);
+static HermesABIPropNameID makePropNameID(const char *name);
+
+// Vendored: extract vm::HermesValue bits from ABI managed pointer
+extern "C" uint64_t ferrum_abi_pointer_to_hv_bits(HermesABIManagedPointer *ptr);
+// Vendored: create jsi::Value on standard runtime from vm::HermesValue bits
+extern "C" void ferrum_hv_to_jsi(
+    facebook::hermes::HermesRuntime *rt, uint64_t hvBits,
+    facebook::jsi::Value *outVal);
+
+/// Convert HermesABIValue → jsi::Value on the STANDARD runtime.
+/// Primitives: direct construction (zero VM interaction).
+/// Pointer types: extract vm::HermesValue from ABI pointer, create jsi::Value.
+static facebook::jsi::Value abiToJSI(const HermesABIValue &v) {
+  switch (v.kind) {
+    case HermesABIValueKindUndefined: return facebook::jsi::Value::undefined();
+    case HermesABIValueKindNull:      return facebook::jsi::Value(std::nullptr_t{});
+    case HermesABIValueKindBoolean:   return facebook::jsi::Value(static_cast<bool>(v.data.boolean));
+    case HermesABIValueKindNumber:    return facebook::jsi::Value(static_cast<double>(v.data.number));
+    default: {
+      // Pointer type — direct conversion via vendored functions
+      uint64_t hvBits = ferrum_abi_pointer_to_hv_bits(v.data.pointer);
+      facebook::jsi::Value result;
+      ferrum_hv_to_jsi(
+          static_cast<facebook::hermes::HermesRuntime *>(g_jsiRuntime),
+          hvBits, &result);
+      return result;
+    }
+  }
+}
+
+struct FerrumPassthroughCtx : HermesABIHostFunction {
+  // The raw host function extracted from the jsi::Function.
+  // This is the C++ function that does all the actual work.
+  facebook::jsi::HostFunctionType hostFn;
+
+  static HermesABIValueOrError call(
+      HermesABIHostFunction *self,
+      HermesABIRuntime *,
+      const HermesABIValue *thisArg,
+      const HermesABIValue *args,
+      size_t count) {
+    auto *ctx = static_cast<FerrumPassthroughCtx *>(self);
+    auto &rt = *g_jsiRuntime;
+
+    // Convert ABI args → JSI (primitives: zero-cost, pointers: vendored)
+    std::vector<facebook::jsi::Value> jsiArgs;
+    jsiArgs.reserve(count);
+    for (size_t i = 0; i < count; i++)
+      jsiArgs.push_back(abiToJSI(args[i]));
+
+    auto jsiThis = abiToJSI(*thisArg);
+    const facebook::jsi::Value *argsPtr = jsiArgs.empty() ? nullptr : jsiArgs.data();
+
+    // Call the hostFn DIRECTLY
+    auto result = ctx->hostFn(rt, jsiThis, argsPtr, count);
+
+    // Convert result back (most methods return void/number/bool)
+    HermesABIValueOrError r;
+    if (result.isUndefined()) { r.value.kind = HermesABIValueKindUndefined; }
+    else if (result.isNull()) { r.value.kind = HermesABIValueKindNull; }
+    else if (result.isBool()) { r.value.kind = HermesABIValueKindBoolean; r.value.data.boolean = result.getBool(); }
+    else if (result.isNumber()) { r.value.kind = HermesABIValueKindNumber; r.value.data.number = result.getNumber(); }
+    else {
+      // Pointer type result — rare for TurboModules, use temp global
+      static const char *kTmp = "__frt";
+      rt.global().setProperty(rt, kTmp, std::move(result));
+      HermesABIPropNameID pn = makePropNameID(kTmp);
+      HermesABIObject glob = g_abiVt->get_global_object(g_abiRt);
+      r = g_abiVt->get_object_property_from_propnameid(g_abiRt, glob, pn);
+      rt.global().setProperty(rt, kTmp, facebook::jsi::Value::undefined());
+      releasePointer(glob.pointer);
+      releasePointer(pn.pointer);
+    }
+    return r;
+  }
+
+  static void release(HermesABIHostFunction *self) {
+    delete static_cast<FerrumPassthroughCtx *>(self);
+  }
+
+  static constexpr HermesABIHostFunctionVTable kVTable = {release, call};
+};
+
+// ---------------------------------------------------------------------------
+// V2 FFI path: typed objc_msgSend via cached dispatch info
+// ---------------------------------------------------------------------------
+
+struct FerrumFFICtx : HermesABIHostFunction {
+  FerrumDispatchInfo *dispatchInfo;
+
+  static HermesABIValueOrError call(
+      HermesABIHostFunction *self,
+      HermesABIRuntime *abiRt,
+      const HermesABIValue *thisArg,
+      const HermesABIValue *args,
+      size_t count) {
+    auto *ctx = static_cast<FerrumFFICtx *>(self);
+    return ferrum_dispatch_call(ctx->dispatchInfo, abiRt, g_abiVt, args, count);
+  }
+
+  static void release(HermesABIHostFunction *self) {
+    auto *ctx = static_cast<FerrumFFICtx *>(self);
+    ferrum_dispatch_free(ctx->dispatchInfo);
+    delete ctx;
+  }
+
+  static constexpr HermesABIHostFunctionVTable kVTable = {release, call};
+};
+
+/// Register a FFI dispatch bridge — typed objc_msgSend, no NSInvocation.
+/// Returns false if the method's type encoding is unsupported.
+static bool registerFFIOnObject(
+    HermesABIObject targetObj,
+    const char *methodName,
+    unsigned int argCount,
+    id instance) {
+
+  // Build selector from JS method name — ferrum_dispatch_build handles
+  // scanning for the real ObjC selector (e.g., "add" → "add:b:")
+  SEL sel = NSSelectorFromString(
+      [NSString stringWithUTF8String:methodName]);
+
+  FerrumDispatchInfo *info = ferrum_dispatch_build(instance, sel);
+  if (!info) return false;
+
+  auto *ctx = new FerrumFFICtx();
+  ctx->vtable = &FerrumFFICtx::kVTable;
+  ctx->dispatchInfo = info;
+
+  HermesABIPropNameID propName = makePropNameID(methodName);
+  if (!propName.pointer) {
+    ferrum_dispatch_free(info);
+    delete ctx;
+    return false;
+  }
+
+  auto fnOrErr = g_abiVt->create_function_from_host_function(
+      g_abiRt, propName, argCount, ctx);
+  if (fnOrErr.ptr_or_error & 1) {
+    releasePointer(propName.pointer);
+    return false;
+  }
+
+  HermesABIValue fnVal;
+  fnVal.kind = HermesABIValueKindObject;
+  fnVal.data.pointer = reinterpret_cast<HermesABIManagedPointer *>(fnOrErr.ptr_or_error);
+  g_abiVt->set_object_property_from_propnameid(g_abiRt, targetObj, propName, &fnVal);
+  releasePointer(propName.pointer);
+  return true;
+}
+
+/// Register a passthrough trampoline wrapping an existing JSI function.
+/// Extracts the HostFunctionType and calls it directly — no VM dispatch.
+static bool registerPassthroughOnObject(
+    HermesABIObject targetObj,
+    const char *methodName,
+    unsigned int argCount,
+    facebook::jsi::Function &&jsiFn) {
+
+  // Extract the raw hostFn from the jsi::Function (protected, access via derived)
+  struct RuntimeAccessor : facebook::jsi::Runtime {
+    using Runtime::getHostFunction;
+  };
+  auto &hostFn = static_cast<RuntimeAccessor *>(g_jsiRuntime)->getHostFunction(jsiFn);
+
+  auto *ctx = new FerrumPassthroughCtx();
+  ctx->vtable = &FerrumPassthroughCtx::kVTable;
+  ctx->hostFn = hostFn;  // copy the std::function
+
+  HermesABIPropNameID propName = makePropNameID(methodName);
+  if (!propName.pointer) return false;
+
+  auto fnOrErr = g_abiVt->create_function_from_host_function(
+      g_abiRt, propName, argCount, ctx);
+  if (fnOrErr.ptr_or_error & 1) {
+    releasePointer(propName.pointer);
+    return false;
+  }
+
+  HermesABIValue fnVal;
+  fnVal.kind = HermesABIValueKindObject;
+  fnVal.data.pointer = reinterpret_cast<HermesABIManagedPointer *>(fnOrErr.ptr_or_error);
+  g_abiVt->set_object_property_from_propnameid(g_abiRt, targetObj, propName, &fnVal);
+  releasePointer(propName.pointer);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // FerrumRuntimeFactory
 // ---------------------------------------------------------------------------
 
@@ -122,6 +327,9 @@ public:
     // 5. Install __ferrumGetModule on the runtime
     //    __turboModuleProxy doesn't exist yet, but __ferrumGetModule
     //    grabs it lazily on first call from JS.
+    // Store the standard JSI runtime for the passthrough trampoline
+    g_jsiRuntime = &jsiRuntime;
+
     ferrum_install_abi_module_getter(&jsiRuntime);
 
     return jsRuntime;
@@ -483,6 +691,105 @@ extern "C" void ferrum_install_abi_module_getter(void *rtPtr) {
 
     global.setProperty(rt, "__ferrumGetModule", getter);
     NSLog(@"[Ferrum] __ferrumGetModule installed on global");
+
+    // --- V2: Passthrough approach ---
+    // Instead of codegen'd type handling, captures existing JSI functions
+    // and re-registers them as C ABI trampolines. Zero type reimplementation.
+    auto getterV2 = facebook::jsi::Function::createFromHostFunction(
+        rt,
+        facebook::jsi::PropNameID::forAscii(rt, "__ferrumGetModuleV2"),
+        1,
+        [](
+            facebook::jsi::Runtime &runtime,
+            const facebook::jsi::Value &thisVal,
+            const facebook::jsi::Value *args,
+            size_t count) -> facebook::jsi::Value {
+
+          if (count < 1 || !args[0].isString())
+            return facebook::jsi::Value::null();
+
+          std::string moduleName = args[0].getString(runtime).utf8(runtime);
+
+          // Get module from nativeModuleProxy
+          auto nativeProxy = runtime.global().getProperty(runtime, "nativeModuleProxy");
+          if (!nativeProxy.isObject())
+            return facebook::jsi::Value::null();
+
+          auto moduleVal = nativeProxy.asObject(runtime).getProperty(
+              runtime, moduleName.c_str());
+          if (!moduleVal.isObject())
+            return facebook::jsi::Value::null();
+
+          auto moduleObj = moduleVal.asObject(runtime);
+
+          // Get method names from our registry (just names, no type info needed)
+          const FerrumABIBridgeEntry *entries =
+              ferrum_abi_lookup_module(moduleName.c_str());
+          if (!entries) {
+            NSLog(@"[Ferrum V2] No registry for '%s'", moduleName.c_str());
+            return facebook::jsi::Value::null();
+          }
+
+          NSLog(@"[Ferrum V2] Building module for '%s'", moduleName.c_str());
+
+          // Extract ObjC instance for FFI dispatch
+          id objcInstance = extractObjCInstance(runtime, moduleObj);
+
+          // Create new JS object via C ABI
+          auto objOrErr = g_abiVt->create_object(g_abiRt);
+          if (objOrErr.ptr_or_error & 1)
+            return facebook::jsi::Value::null();
+
+          HermesABIObject abiObj;
+          abiObj.pointer = reinterpret_cast<HermesABIManagedPointer *>(objOrErr.ptr_or_error);
+
+          int ffiCount = 0, passthroughCount = 0;
+          for (const FerrumABIBridgeEntry *e = entries; e->methodName; e++) {
+            // Try FFI dispatch first (typed objc_msgSend, no NSInvocation)
+            if (objcInstance && registerFFIOnObject(
+                    abiObj, e->methodName, e->argCount, objcInstance)) {
+              NSLog(@"[Ferrum V2]   %s → FFI", e->methodName);
+              ffiCount++;
+              continue;
+            }
+
+            // Fallback: passthrough via hostFn
+            auto propVal = moduleObj.getProperty(runtime, e->methodName);
+            if (!propVal.isObject()) continue;
+            auto propObj = propVal.asObject(runtime);
+            if (!propObj.isFunction(runtime)) continue;
+
+            if (registerPassthroughOnObject(
+                    abiObj, e->methodName, e->argCount,
+                    propObj.asFunction(runtime))) {
+              NSLog(@"[Ferrum V2]   %s → passthrough", e->methodName);
+              passthroughCount++;
+            }
+          }
+
+          NSLog(@"[Ferrum V2] '%s': %d FFI + %d passthrough bridges",
+                moduleName.c_str(), ffiCount, passthroughCount);
+
+          // Bridge C ABI object to JSI via temp global
+          std::string tempKey = "__ferrum_tmp2_" + moduleName;
+          HermesABIPropNameID tempPN = makePropNameID(tempKey.c_str());
+          HermesABIObject glob = g_abiVt->get_global_object(g_abiRt);
+          HermesABIValue objVal;
+          objVal.kind = HermesABIValueKindObject;
+          objVal.data.pointer = abiObj.pointer;
+          g_abiVt->set_object_property_from_propnameid(g_abiRt, glob, tempPN, &objVal);
+
+          auto result = runtime.global().getProperty(runtime, tempKey.c_str());
+          runtime.global().setProperty(runtime, tempKey.c_str(),
+                                       facebook::jsi::Value::undefined());
+          releasePointer(abiObj.pointer);
+          releasePointer(glob.pointer);
+          releasePointer(tempPN.pointer);
+          return result;
+        });
+
+    global.setProperty(rt, "__ferrumGetModuleV2", getterV2);
+    NSLog(@"[Ferrum] __ferrumGetModuleV2 installed on global");
 
   } catch (const std::exception &e) {
     NSLog(@"[Ferrum] Exception installing getter: %s", e.what());
