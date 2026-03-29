@@ -49,12 +49,13 @@ public:
 
     NSLog(@"[Ferrum] Got vm::Runtime, creating temporary C ABI wrapper");
 
-    // 3. Temporary C ABI wrap — register Rust functions
-    {
-      HermesABIRuntime *abiRt = ferrum_wrap_vm_runtime(vmRuntime);
-      ferrum_register_globals(abiRt, abiRt->vt);
-      ferrum_release_borrowed_runtime(abiRt);
-    } // wrapper destroyed, registrations persist on vm::Runtime
+    // 3. C ABI wrap — register Rust functions
+    // Wrapper is leaked (not destroyed) because registered host functions
+    // hold managed pointer references tracked by the wrapper. The non-owning
+    // shared_ptr means no runtime leak — only the wrapper object (~200 bytes).
+    HermesABIRuntime *abiRt = ferrum_wrap_vm_runtime(vmRuntime);
+    ferrum_register_globals(abiRt, abiRt->vt);
+    // abiRt intentionally leaked
 
     NSLog(@"[Ferrum] Rust globals registered, returning standard HermesRuntime");
 
