@@ -15,6 +15,10 @@ void *jsrt_create_ferrum_factory(void);
 /// Called from FerrumRuntimeFactory before the runtime is wrapped in JSI.
 void ferrum_register_globals(void *rt, const void *vt);
 
+/// Install __ferrumGetModule on the global — parallel C ABI module getter.
+/// Called after the JSI runtime is ready and __turboModuleProxy exists.
+void ferrum_install_abi_module_getter(void *rt);
+
 #ifdef __cplusplus
 }
 #endif

@@ -40,6 +40,6 @@ class FerrumBridge {
   var callOverheadMicros: Double = -1.0
 }
 
-// Rust FFI
-@_silgen_name("ferrum_install_on_runtime")
-func ferrum_install_on_runtime(_ runtime: UnsafeMutableRawPointer)
+// Ferrum C FFI
+@_silgen_name("ferrum_install_abi_module_getter")
+func ferrum_install_abi_module_getter(_ runtime: UnsafeMutableRawPointer)
