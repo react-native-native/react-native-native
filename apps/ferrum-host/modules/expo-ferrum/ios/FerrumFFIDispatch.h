@@ -37,7 +37,7 @@ struct FerrumDispatchInfo {
 
 extern "C" {
 
-FerrumDispatchInfo *ferrum_dispatch_build(id instance, SEL selector);
+FerrumDispatchInfo *ferrum_dispatch_build(id instance, SEL selector, unsigned int expectedArgs);
 
 HermesABIValueOrError ferrum_dispatch_call(
     const FerrumDispatchInfo *info,

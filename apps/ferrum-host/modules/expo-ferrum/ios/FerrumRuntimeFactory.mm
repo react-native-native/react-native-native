@@ -212,7 +212,7 @@ static bool registerFFIOnObject(
   SEL sel = NSSelectorFromString(
       [NSString stringWithUTF8String:methodName]);
 
-  FerrumDispatchInfo *info = ferrum_dispatch_build(instance, sel);
+  FerrumDispatchInfo *info = ferrum_dispatch_build(instance, sel, argCount);
   if (!info) return false;
 
   auto *ctx = new FerrumFFICtx();

@@ -138,7 +138,35 @@ static HermesABIValueOrError ffi_bool_1_bool(const FerrumDispatchInfo *i, Hermes
   HermesABIValueOrError r; r.value.kind = HermesABIValueKindBoolean; r.value.data.boolean = ret; return r;
 }
 
-// --- OBJECT RETURN (sync) ---
+// --- NUMERIC OBJECT RETURN (sync) ---
+// Methods returning NSNumber* — unwrap directly without runtime type inspection.
+// Resolved when we detect the return encoding is '@' but the method name/context
+// suggests a numeric return (or we could check at registration time).
+
+static inline HermesABIValueOrError numResult(id ret) {
+  HermesABIValueOrError r;
+  r.value.kind = HermesABIValueKindNumber;
+  r.value.data.number = [ret doubleValue];
+  return r;
+}
+
+static HermesABIValueOrError ffi_numobj_0(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue*, size_t) {
+  return numResult(((id(*)(id,SEL))objc_msgSend)(i->instance, i->selector));
+}
+
+static HermesABIValueOrError ffi_numobj_1_double(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
+  return numResult(((id(*)(id,SEL,double))objc_msgSend)(i->instance, i->selector, getNum(&args[0])));
+}
+
+static HermesABIValueOrError ffi_numobj_1_bool(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
+  return numResult(((id(*)(id,SEL,BOOL))objc_msgSend)(i->instance, i->selector, getBool(&args[0])));
+}
+
+static HermesABIValueOrError ffi_numobj_2_double_double(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
+  return numResult(((id(*)(id,SEL,double,double))objc_msgSend)(i->instance, i->selector, getNum(&args[0]), getNum(&args[1])));
+}
+
+// --- GENERIC OBJECT RETURN (sync) ---
 
 static HermesABIValueOrError ffi_obj_0(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue*, size_t) {
   id ret = ((id(*)(id,SEL))objc_msgSend)(i->instance, i->selector);
@@ -183,8 +211,17 @@ static HermesABIValueOrError ffi_int_0(const FerrumDispatchInfo *i, HermesABIRun
 
 extern "C" {
 
-FerrumDispatchInfo *ferrum_dispatch_build(id instance, SEL selector) {
+FerrumDispatchInfo *ferrum_dispatch_build(id instance, SEL selector, unsigned int expectedArgs) {
   Method m = class_getInstanceMethod([instance class], selector);
+
+  // Verify arg count matches (numberOfArguments includes self + _cmd)
+  if (m && expectedArgs > 0) {
+    NSMethodSignature *sig = [instance methodSignatureForSelector:selector];
+    if (sig && [sig numberOfArguments] - 2 != expectedArgs) {
+      m = nullptr; // wrong arg count, fall through to scan
+    }
+  }
+
   if (!m) {
     // JS name → ObjC selector: scan for prefix + ':'
     NSString *selName = NSStringFromSelector(selector);
@@ -238,12 +275,36 @@ FerrumDispatchInfo *ferrum_dispatch_build(id instance, SEL selector) {
     if (nargs == 0) callFn = ffi_bool_0;
     else if (nargs == 1 && argKinds[0] == AKind::Bool) callFn = ffi_bool_1_bool;
   } else if (retKind == AKind::Object) {
-    if (nargs == 0) callFn = ffi_obj_0;
-    else if (nargs == 1 && argKinds[0] == AKind::Object) callFn = ffi_obj_1_obj;
-    else if (nargs == 1 && argKinds[0] == AKind::Double) callFn = ffi_obj_1_double;
-    else if (nargs == 1 && argKinds[0] == AKind::Bool)   callFn = ffi_obj_1_bool;
-    else if (nargs == 2 && argKinds[0] == AKind::Double && argKinds[1] == AKind::Double) callFn = ffi_obj_2_double_double;
-    else if (nargs == 2 && argKinds[0] == AKind::Object && argKinds[1] == AKind::Object) callFn = ffi_obj_2_obj_obj;
+    // Check if all args are primitives — strong signal the return is NSNumber*
+    // (e.g., add:(double)a b:(double)b → NSNumber*, negate:(BOOL)a → NSNumber*)
+    // Use numobj variants that call [result doubleValue] directly.
+    bool allPrimitive = true;
+    for (NSUInteger i = 0; i < nargs; i++) {
+      if (argKinds[i] != AKind::Double && argKinds[i] != AKind::Bool &&
+          argKinds[i] != AKind::Int && argKinds[i] != AKind::LongLong &&
+          argKinds[i] != AKind::Float) {
+        allPrimitive = false;
+        break;
+      }
+    }
+
+    if (allPrimitive) {
+      // Numeric object return — unwrap directly
+      if (nargs == 0) callFn = ffi_numobj_0;
+      else if (nargs == 1 && argKinds[0] == AKind::Double) callFn = ffi_numobj_1_double;
+      else if (nargs == 1 && argKinds[0] == AKind::Bool)   callFn = ffi_numobj_1_bool;
+      else if (nargs == 2 && argKinds[0] == AKind::Double && argKinds[1] == AKind::Double) callFn = ffi_numobj_2_double_double;
+    }
+
+    // Generic object return
+    if (!callFn) {
+      if (nargs == 0) callFn = ffi_obj_0;
+      else if (nargs == 1 && argKinds[0] == AKind::Object) callFn = ffi_obj_1_obj;
+      else if (nargs == 1 && argKinds[0] == AKind::Double) callFn = ffi_obj_1_double;
+      else if (nargs == 1 && argKinds[0] == AKind::Bool)   callFn = ffi_obj_1_bool;
+      else if (nargs == 2 && argKinds[0] == AKind::Double && argKinds[1] == AKind::Double) callFn = ffi_obj_2_double_double;
+      else if (nargs == 2 && argKinds[0] == AKind::Object && argKinds[1] == AKind::Object) callFn = ffi_obj_2_obj_obj;
+    }
   } else if (retKind == AKind::Int || retKind == AKind::LongLong) {
     if (nargs == 0) callFn = ffi_int_0;
   }

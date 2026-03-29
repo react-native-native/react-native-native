@@ -101,39 +101,25 @@ export default function App() {
   function testVibration() {
     const rounds = 20;
 
-    // FerrumBench.add via all 3 paths — pure arithmetic, no hardware
-    if (!cachedV2Bench) cachedV2Bench = global.__ferrumGetModuleV2?.("FerrumBench");
-    if (!cachedV1Bench) cachedV1Bench = global.__ferrumGetModule?.("FerrumBench");
-    const v2Bench = cachedV2Bench;
-    const v1Bench = cachedV1Bench;
-    const jsiBench = NativeModules.FerrumBench;
+    const jsiStart = performance.now();
+    for (let i = 0; i < rounds; i++) Vibration.vibrate(1);
+    const jsiUs = (((performance.now() - jsiStart) * 1000) / rounds).toFixed(1);
 
-    let jsiUs = "N/A", abiUs2 = "N/A", v2Us = "N/A";
-
-    if (jsiBench) {
-      jsiBench.add(1, 1); // warm
-      const t = performance.now();
-      for (let i = 0; i < rounds; i++) jsiBench.add(i, i);
-      jsiUs = (((performance.now() - t) * 1000) / rounds).toFixed(2);
+    let abiUs = "N/A";
+    if (abiVibration) {
+      const abiStart = performance.now();
+      for (let i = 0; i < rounds; i++) abiVibration.vibrate(1);
+      abiUs = (((performance.now() - abiStart) * 1000) / rounds).toFixed(1);
     }
 
-    if (v1Bench) {
-      {
-        v1Bench.add(1, 1);
-        const t = performance.now();
-        for (let i = 0; i < rounds; i++) v1Bench.add(i, i);
-        abiUs2 = (((performance.now() - t) * 1000) / rounds).toFixed(2);
-      }
+    let v2Us = "N/A";
+    if (v2Vibration) {
+      const v2Start = performance.now();
+      for (let i = 0; i < rounds; i++) v2Vibration.vibrate(1);
+      v2Us = (((performance.now() - v2Start) * 1000) / rounds).toFixed(1);
     }
 
-    if (v2Bench) {
-      v2Bench.add(1, 1);
-      const t = performance.now();
-      for (let i = 0; i < rounds; i++) v2Bench.add(i, i);
-      v2Us = (((performance.now() - t) * 1000) / rounds).toFixed(2);
-    }
-
-    setVibrationResult(`JSI: ${jsiUs} · V1: ${abiUs2} · V2: ${v2Us} μs (add)`);
+    setVibrationResult(`JSI: ${jsiUs} · V1: ${abiUs} · V2: ${v2Us} μs`);
   }
 
   function testClipboard() {
