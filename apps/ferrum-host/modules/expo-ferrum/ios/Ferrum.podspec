@@ -23,11 +23,9 @@ Pod::Spec.new do |s|
     'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) HERMES_ENABLE_DEBUGGER=0',
   }
 
-  # Only the 3 core files
   s.source_files = [
     "Ferrum.mm",
     "FerrumFFIDispatch.h",
     "FerrumFFIDispatch.mm",
-    "FerrumBench.mm",
   ]
 end
