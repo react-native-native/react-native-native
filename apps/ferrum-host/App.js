@@ -1,3 +1,6 @@
+import { enableFerrum } from "./modules/expo-ferrum";
+enableFerrum();
+
 import { StatusBar } from "expo-status-bar";
 import { useState, useEffect } from "react";
 import {

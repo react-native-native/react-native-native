@@ -158,7 +158,59 @@ static facebook::jsi::Value ferrumGetModule(
 }
 
 // ---------------------------------------------------------------------------
-// FerrumRuntimeFactory — installs __ferrumGetModule on the runtime
+// FerrumModuleProxy — HostObject that wraps nativeModuleProxy
+// ---------------------------------------------------------------------------
+// Intercepts property access: builds Ferrum-accelerated module on first access,
+// caches it, falls back to original for modules it can't handle.
+
+class FerrumModuleProxy : public facebook::jsi::HostObject {
+  // The original nativeModuleProxy HostObject
+  std::shared_ptr<facebook::jsi::HostObject> original_;
+  // Cache of accelerated modules
+  std::unordered_map<std::string, facebook::jsi::Value> cache_;
+
+public:
+  FerrumModuleProxy(std::shared_ptr<facebook::jsi::HostObject> original)
+      : original_(std::move(original)) {}
+
+  facebook::jsi::Value get(facebook::jsi::Runtime &rt,
+                           const facebook::jsi::PropNameID &name) override {
+    std::string propName = name.utf8(rt);
+
+    // Check cache
+    auto it = cache_.find(propName);
+    if (it != cache_.end()) {
+      return facebook::jsi::Value(rt, it->second);
+    }
+
+    // Try building a Ferrum module
+    auto args = facebook::jsi::String::createFromUtf8(rt, propName);
+    auto asVal = facebook::jsi::Value(rt, args);
+    auto result = ferrumGetModule(rt, facebook::jsi::Value::undefined(), &asVal, 1);
+
+    if (!result.isNull() && !result.isUndefined()) {
+      cache_.emplace(propName, facebook::jsi::Value(rt, result.asObject(rt)));
+      return result;
+    }
+
+    // Fall back to original
+    return original_->get(rt, name);
+  }
+
+  void set(facebook::jsi::Runtime &rt,
+           const facebook::jsi::PropNameID &name,
+           const facebook::jsi::Value &value) override {
+    original_->set(rt, name, value);
+  }
+
+  std::vector<facebook::jsi::PropNameID> getPropertyNames(
+      facebook::jsi::Runtime &rt) override {
+    return original_->getPropertyNames(rt);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// FerrumRuntimeFactory
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -175,14 +227,14 @@ public:
 
     auto &rt = jsRuntime->getRuntime();
 
-    // Install __ferrumGetModule
+    // Install __ferrumGetModule for explicit use / benchmarking
     auto getter = facebook::jsi::Function::createFromHostFunction(
         rt,
         facebook::jsi::PropNameID::forAscii(rt, "__ferrumGetModule"),
         1,
         ferrumGetModule);
-
     rt.global().setProperty(rt, "__ferrumGetModule", getter);
+
     NSLog(@"[Ferrum] __ferrumGetModule installed");
 
     return jsRuntime;
@@ -220,6 +272,7 @@ extern "C" void *jsrt_create_ferrum_factory(void) {
 
     method_setImplementation(method, newIMP);
     NSLog(@"[Ferrum] Swizzled createJSRuntimeFactory");
+
   });
 }
 

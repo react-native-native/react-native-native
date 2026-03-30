@@ -80,7 +80,8 @@ static NSDictionary *getDict(jsi::Runtime &rt, const jsi::Value &v) {
 }
 
 static id jsiToObjC(jsi::Runtime &rt, const jsi::Value &v) {
-  if (v.isNull() || v.isUndefined()) return [NSNull null];
+  if (v.isUndefined()) return nil;
+  if (v.isNull()) return [NSNull null];
   if (v.isBool()) return @(v.getBool());
   if (v.isNumber()) return @(v.getNumber());
   if (v.isString()) return getStr(rt, v);
@@ -100,6 +101,38 @@ static id getObj(jsi::Runtime &rt, const jsi::Value &v) {
 
 typedef void (^RCTResponseSenderBlock)(NSArray *);
 
+// --- ObjC → JSI conversion (recursive) ---
+
+static jsi::Value objcToJSI(jsi::Runtime &rt, id obj) {
+  if (!obj) return jsi::Value::undefined();
+  if ([obj isKindOfClass:[NSNull class]]) return jsi::Value::null();
+  if ([obj isKindOfClass:[NSNumber class]]) {
+    NSNumber *num = obj;
+    if (strcmp([num objCType], @encode(BOOL)) == 0 ||
+        strcmp([num objCType], @encode(char)) == 0) {
+      return jsi::Value(static_cast<bool>([num boolValue]));
+    }
+    return jsi::Value(static_cast<double>([num doubleValue]));
+  }
+  if ([obj isKindOfClass:[NSString class]])
+    return jsi::String::createFromUtf8(rt, [(NSString *)obj UTF8String]);
+  if ([obj isKindOfClass:[NSArray class]]) {
+    NSArray *arr = obj;
+    auto jsArr = jsi::Array(rt, arr.count);
+    for (NSUInteger i = 0; i < arr.count; i++)
+      jsArr.setValueAtIndex(rt, i, objcToJSI(rt, arr[i]));
+    return std::move(jsArr);
+  }
+  if ([obj isKindOfClass:[NSDictionary class]]) {
+    NSDictionary *dict = obj;
+    auto jsObj = jsi::Object(rt);
+    for (NSString *key in dict)
+      jsObj.setProperty(rt, [key UTF8String], objcToJSI(rt, dict[key]));
+    return std::move(jsObj);
+  }
+  return jsi::Value::null();
+}
+
 static RCTResponseSenderBlock getBlock(jsi::Runtime &rt, const jsi::Value &v) {
   if (!v.isObject() || !v.asObject(rt).isFunction(rt)) {
     return ^(NSArray *r) {};
@@ -116,55 +149,8 @@ static RCTResponseSenderBlock getBlock(jsi::Runtime &rt, const jsi::Value &v) {
       size_t argc = response.count;
       std::vector<jsi::Value> args;
       args.reserve(argc);
-      for (size_t i = 0; i < argc; i++) {
-        id obj = response[i];
-        if (!obj || [obj isKindOfClass:[NSNull class]]) {
-          args.push_back(jsi::Value::null());
-        } else if ([obj isKindOfClass:[NSNumber class]]) {
-          NSNumber *num = obj;
-          if (strcmp([num objCType], @encode(BOOL)) == 0 ||
-              strcmp([num objCType], @encode(char)) == 0) {
-            args.push_back(jsi::Value(static_cast<bool>([num boolValue])));
-          } else {
-            args.push_back(jsi::Value(static_cast<double>([num doubleValue])));
-          }
-        } else if ([obj isKindOfClass:[NSString class]]) {
-          args.push_back(jsi::String::createFromUtf8(rt, [(NSString *)obj UTF8String]));
-        } else if ([obj isKindOfClass:[NSArray class]]) {
-          NSArray *arr = obj;
-          auto jsArr = jsi::Array(rt, arr.count);
-          for (NSUInteger j = 0; j < arr.count; j++) {
-            id elem = arr[j];
-            if (!elem || [elem isKindOfClass:[NSNull class]])
-              jsArr.setValueAtIndex(rt, j, jsi::Value::null());
-            else if ([elem isKindOfClass:[NSNumber class]])
-              jsArr.setValueAtIndex(rt, j, jsi::Value(static_cast<double>([elem doubleValue])));
-            else if ([elem isKindOfClass:[NSString class]])
-              jsArr.setValueAtIndex(rt, j, jsi::String::createFromUtf8(rt, [(NSString *)elem UTF8String]));
-            else if ([elem isKindOfClass:[NSArray class]]) {
-              // Nested array — recursive would be cleaner but inline for 2 levels
-              NSArray *inner = elem;
-              auto jsInner = jsi::Array(rt, inner.count);
-              for (NSUInteger k = 0; k < inner.count; k++) {
-                id ie = inner[k];
-                if (!ie || [ie isKindOfClass:[NSNull class]])
-                  jsInner.setValueAtIndex(rt, k, jsi::Value::null());
-                else if ([ie isKindOfClass:[NSString class]])
-                  jsInner.setValueAtIndex(rt, k, jsi::String::createFromUtf8(rt, [(NSString *)ie UTF8String]));
-                else if ([ie isKindOfClass:[NSNumber class]])
-                  jsInner.setValueAtIndex(rt, k, jsi::Value(static_cast<double>([ie doubleValue])));
-                else
-                  jsInner.setValueAtIndex(rt, k, jsi::Value::null());
-              }
-              jsArr.setValueAtIndex(rt, j, std::move(jsInner));
-            } else
-              jsArr.setValueAtIndex(rt, j, jsi::Value::null());
-          }
-          args.push_back(std::move(jsArr));
-        } else {
-          args.push_back(jsi::Value::null());
-        }
-      }
+      for (size_t i = 0; i < argc; i++)
+        args.push_back(objcToJSI(rt, response[i]));
       const jsi::Value *argsPtr = args.empty() ? nullptr : args.data();
       fn->call(rt, argsPtr, argc);
     });
