@@ -48,6 +48,12 @@ HermesABIValueOrError ferrum_dispatch_call(
 
 void ferrum_dispatch_free(FerrumDispatchInfo *info);
 
+/// Set global state needed for block/callback wrapping.
+void ferrum_dispatch_set_globals(
+    HermesABIRuntime *rt,
+    const HermesABIRuntimeVTable *vt,
+    void *invokerPtr);
+
 } // extern "C"
 
 #endif // __cplusplus

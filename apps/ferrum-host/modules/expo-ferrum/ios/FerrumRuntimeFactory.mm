@@ -22,8 +22,6 @@
 #include <ReactCommon/TurboModule.h>
 #include <ReactCommon/RCTTurboModule.h>
 
-// Rust FFI
-extern "C" void ferrum_register_globals(HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt);
 
 // Default Hermes factory (from RN)
 extern "C" void *jsrt_create_hermes_factory(void);
@@ -194,8 +192,6 @@ public:
     NSLog(@"[Ferrum] Shared C ABI runtime created");
 
     // 4. Register Rust function pointers
-    ferrum_register_globals(g_abiRt, g_abiVt);
-    NSLog(@"[Ferrum] Rust globals registered");
 
     // 5. C ABI bridges auto-register via __attribute__((constructor))
     //    in the generated files (requires -ObjC linker flag)
@@ -327,6 +323,8 @@ static id<RCTBridgeModule> extractObjCInstance(
       if (invoker) {
         g_jsInvoker = new std::shared_ptr<facebook::react::CallInvoker>(invoker);
         NSLog(@"[Ferrum] Captured CallInvoker from TurboModule");
+        // Pass to FFI dispatcher for block/callback wrapping
+        ferrum_dispatch_set_globals(g_abiRt, g_abiVt, g_jsInvoker);
       }
     }
 
@@ -624,8 +622,23 @@ extern "C" void ferrum_install_abi_module_getter(void *rtPtr) {
               NSLog(@"[Ferrum V2]   %s → FFI", e->methodName);
               ffiCount++;
             } else {
-              // Unsupported pattern — stays on JSI via the original module
-              NSLog(@"[Ferrum V2]   %s → JSI fallback", e->methodName);
+              // Unsupported pattern — copy the JSI method from original module
+              auto prop = moduleObj.getProperty(runtime, e->methodName);
+              if (prop.isObject()) {
+                // Set on the V2 object via temp global bridge
+                std::string tk = std::string("__ftmp_") + e->methodName;
+                runtime.global().setProperty(runtime, tk.c_str(), std::move(prop));
+                HermesABIPropNameID pn = makePropNameID(e->methodName);
+                HermesABIPropNameID tkpn = makePropNameID(tk.c_str());
+                HermesABIObject glob = g_abiVt->get_global_object(g_abiRt);
+                auto val = g_abiVt->get_object_property_from_propnameid(g_abiRt, glob, tkpn);
+                g_abiVt->set_object_property_from_propnameid(g_abiRt, abiObj, pn, &val.value);
+                runtime.global().setProperty(runtime, tk.c_str(), facebook::jsi::Value::undefined());
+                releasePointer(glob.pointer);
+                releasePointer(pn.pointer);
+                releasePointer(tkpn.pointer);
+              }
+              NSLog(@"[Ferrum V2]   %s → JSI (copied)", e->methodName);
               skipped++;
             }
           }

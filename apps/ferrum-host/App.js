@@ -14,15 +14,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // --- Synchronous benchmarks (run at module load) ---
 
-const rustResult = global.rust_add(40, 2);
 const iterations = 100000;
-let start = performance.now();
-for (let i = 0; i < iterations; i++) global.rust_add(i, i);
-const rustUs = (((performance.now() - start) * 1000) / iterations).toFixed(2);
-
 let benchUs = "N/A";
+let start;
 try {
-  const abiBench = global.__ferrumGetModule?.("FerrumBench");
+  const abiBench = global.__ferrumGetModuleV2?.("FerrumBench");
   if (abiBench) {
     start = performance.now();
     for (let i = 0; i < iterations; i++) abiBench.add(i, i);
@@ -33,9 +29,9 @@ try {
 // --- C ABI modules ---
 let cachedV1Bench = null;
 let cachedV2Bench = null;
-const abiVibration = global.__ferrumGetModule?.("Vibration");
-const abiClipboard = global.__ferrumGetModule?.("Clipboard");
-const abiAppState = global.__ferrumGetModule?.("AppState");
+const abiVibration = global.__ferrumGetModuleV2?.("Vibration");
+const abiClipboard = global.__ferrumGetModuleV2?.("Clipboard");
+const abiAppState = global.__ferrumGetModuleV2?.("AppState");
 
 // V2: passthrough (reuses existing hostFn, no type reimplementation)
 const v2Vibration = global.__ferrumGetModuleV2?.("Vibration");
@@ -79,20 +75,22 @@ export default function App() {
       jsiMs = "err";
     }
 
-    // ABI
+    // ABI — methods with callbacks are copied from JSI module
     let abiMs = "?";
     try {
-      const m = global.__ferrumGetModule?.("RNCAsyncStorage");
-      if (m) {
+      const m = global.__ferrumGetModuleV2?.("RNCAsyncStorage");
+      if (m && m.multiSet) {
         await abiSetGet(m, key + "_abi", val);
         const t = performance.now();
         for (let i = 0; i < rounds; i++) {
           await abiSetGet(m, key + "_abi", val + i);
         }
         abiMs = ((performance.now() - t) / rounds).toFixed(1);
+      } else {
+        abiMs = "N/A";
       }
     } catch (e) {
-      abiMs = "err";
+      abiMs = "err: " + e.message;
     }
 
     setStorageResult(`JSI: ${jsiMs}ms · ABI: ${abiMs}ms (${rounds}x)`);
@@ -151,6 +149,10 @@ export default function App() {
       setAppStateResult("module not found");
       return;
     }
+    if (!abiAppState.getCurrentAppState) {
+      setAppStateResult("method not supported (block args)");
+      return;
+    }
 
     const rounds = 20;
     let completed = 0;
@@ -201,7 +203,7 @@ export default function App() {
       <View style={styles.resultBox}>
         <Text style={styles.label}>Sync (100K calls)</Text>
         <Text style={styles.result}>
-          Rust: {rustUs}μs · Bench: {benchUs}μs
+          FerrumBench.add: {benchUs}μs/call
         </Text>
       </View>
 
