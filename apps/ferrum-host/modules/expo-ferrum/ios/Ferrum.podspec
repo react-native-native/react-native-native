@@ -24,6 +24,13 @@ Pod::Spec.new do |s|
   }
 
   s.source_files = "**/*.{h,mm,cpp}"
-  s.exclude_files = ["**/ExpoFerrumModule.swift"]
+  s.exclude_files = [
+    "**/ExpoFerrumModule.swift",
+    "**/generated/**",
+    "**/FerrumABIRegistry.*",
+    "**/FerrumRuntimeHook.*",
+    "**/CODEGEN.md",
+    "**/ferrum-codegen*",
+  ]
   s.private_header_files = ["FerrumABI*.h", "FerrumRuntimeFactory.h", "FerrumFFIDispatch.h"]
 end

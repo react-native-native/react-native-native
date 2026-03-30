@@ -18,7 +18,7 @@ const iterations = 100000;
 let benchUs = "N/A";
 let start;
 try {
-  const abiBench = global.__ferrumGetModuleV2?.("FerrumBench");
+  const abiBench = global.__ferrumGetModule?.("FerrumBench");
   if (abiBench) {
     start = performance.now();
     for (let i = 0; i < iterations; i++) abiBench.add(i, i);
@@ -29,13 +29,13 @@ try {
 // --- C ABI modules ---
 let cachedV1Bench = null;
 let cachedV2Bench = null;
-const abiVibration = global.__ferrumGetModuleV2?.("Vibration");
-const abiClipboard = global.__ferrumGetModuleV2?.("Clipboard");
-const abiAppState = global.__ferrumGetModuleV2?.("AppState");
+const abiVibration = global.__ferrumGetModule?.("Vibration");
+const abiClipboard = global.__ferrumGetModule?.("Clipboard");
+const abiAppState = global.__ferrumGetModule?.("AppState");
 
 // V2: passthrough (reuses existing hostFn, no type reimplementation)
-const v2Vibration = global.__ferrumGetModuleV2?.("Vibration");
-const v2Clipboard = global.__ferrumGetModuleV2?.("Clipboard");
+const v2Vibration = global.__ferrumGetModule?.("Vibration");
+const v2Clipboard = global.__ferrumGetModule?.("Clipboard");
 
 export default function App() {
   const [storageResult, setStorageResult] = useState("testing...");
@@ -78,7 +78,7 @@ export default function App() {
     // ABI — methods with callbacks are copied from JSI module
     let abiMs = "?";
     try {
-      const m = global.__ferrumGetModuleV2?.("RNCAsyncStorage");
+      const m = global.__ferrumGetModule?.("RNCAsyncStorage");
       if (m && m.multiSet) {
         await abiSetGet(m, key + "_abi", val);
         const t = performance.now();
@@ -147,10 +147,6 @@ export default function App() {
   function testAppState() {
     if (!abiAppState) {
       setAppStateResult("module not found");
-      return;
-    }
-    if (!abiAppState.getCurrentAppState) {
-      setAppStateResult("method not supported (block args)");
       return;
     }
 
