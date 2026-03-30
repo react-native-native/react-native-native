@@ -1,7 +1,10 @@
 # ninja log v5
-0	1987	1774908932175608159	CMakeFiles/ferrum.dir/FerrumBindings.cpp.o	a2e28231e5db92a0
-1990	2140	1774908932362774121	/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/arm64-v8a/libferrum.so	d4c5eadd66ae1307
-34	1462	1774909257928791326	CMakeFiles/ferrum.dir/FerrumBindings.cpp.o	a2e28231e5db92a0
-1462	1708	1774909258183703989	/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/arm64-v8a/libferrum.so	d4c5eadd66ae1307
-29	1409	1774909475933339744	CMakeFiles/ferrum.dir/FerrumBindings.cpp.o	a2e28231e5db92a0
-1409	1629	1774909476187461733	/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/arm64-v8a/libferrum.so	d4c5eadd66ae1307
+1	1620	1774912169162457608	CMakeFiles/ferrum.dir/FerrumJNIDispatch.cpp.o	8c4be53c7a8a7f37
+0	2148	1774912169647066950	CMakeFiles/ferrum.dir/FerrumBindings.cpp.o	a2e28231e5db92a0
+2148	2329	1774912169875248972	/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/arm64-v8a/libferrum.so	defb96f9f59b391e
+39	1343	1774913598743165190	CMakeFiles/ferrum.dir/FerrumBindings.cpp.o	a2e28231e5db92a0
+1343	1538	1774913598943676400	/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/arm64-v8a/libferrum.so	defb96f9f59b391e
+2	1419	1774913679717418415	CMakeFiles/ferrum.dir/FerrumBindings.cpp.o	a2e28231e5db92a0
+1419	1987	1774913680296276253	/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/arm64-v8a/libferrum.so	defb96f9f59b391e
+35	1343	1774913772438502955	CMakeFiles/ferrum.dir/FerrumJNIDispatch.cpp.o	8c4be53c7a8a7f37
+1343	1540	1774913772642188083	/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/arm64-v8a/libferrum.so	defb96f9f59b391e

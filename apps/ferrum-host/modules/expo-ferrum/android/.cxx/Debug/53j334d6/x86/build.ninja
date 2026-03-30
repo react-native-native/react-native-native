@@ -59,6 +59,16 @@ build CMakeFiles/ferrum.dir/FerrumBindings.cpp.o: CXX_COMPILER__ferrum_Debug /Us
   TARGET_COMPILE_PDB = CMakeFiles/ferrum.dir/
   TARGET_PDB = /Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/x86/libferrum.pdb
 
+build CMakeFiles/ferrum.dir/FerrumJNIDispatch.cpp.o: CXX_COMPILER__ferrum_Debug /Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/src/main/cpp/FerrumJNIDispatch.cpp || cmake_object_order_depends_target_ferrum
+  DEFINES = -Dferrum_EXPORTS
+  DEP_FILE = CMakeFiles/ferrum.dir/FerrumJNIDispatch.cpp.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++20 -frtti -fexceptions -fno-limit-debug-info  -fPIC
+  INCLUDES = -isystem /Users/kim/.gradle/caches/9.0.0/transforms/83198c47a1c402754cadaa99718025d1/transformed/fbjni-0.7.0/prefab/modules/fbjni/include -isystem /Users/kim/.gradle/caches/9.0.0/transforms/ebdf79766f4559f64a0c8b6c70cdb3d5/transformed/react-android-0.83.4-debug/prefab/modules/jsi/include -isystem /Users/kim/.gradle/caches/9.0.0/transforms/ebdf79766f4559f64a0c8b6c70cdb3d5/transformed/react-android-0.83.4-debug/prefab/modules/reactnative/include
+  OBJECT_DIR = CMakeFiles/ferrum.dir
+  OBJECT_FILE_DIR = CMakeFiles/ferrum.dir
+  TARGET_COMPILE_PDB = CMakeFiles/ferrum.dir/
+  TARGET_PDB = /Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/x86/libferrum.pdb
+
 
 # =============================================================================
 # Link build statements for SHARED_LIBRARY target ferrum
@@ -67,7 +77,7 @@ build CMakeFiles/ferrum.dir/FerrumBindings.cpp.o: CXX_COMPILER__ferrum_Debug /Us
 #############################################
 # Link the shared library /Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/x86/libferrum.so
 
-build /Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/x86/libferrum.so: CXX_SHARED_LIBRARY_LINKER__ferrum_Debug CMakeFiles/ferrum.dir/FerrumBindings.cpp.o | /Users/kim/.gradle/caches/9.0.0/transforms/83198c47a1c402754cadaa99718025d1/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.x86/libfbjni.so /Users/kim/.gradle/caches/9.0.0/transforms/ebdf79766f4559f64a0c8b6c70cdb3d5/transformed/react-android-0.83.4-debug/prefab/modules/jsi/libs/android.x86/libjsi.so /Users/kim/.gradle/caches/9.0.0/transforms/ebdf79766f4559f64a0c8b6c70cdb3d5/transformed/react-android-0.83.4-debug/prefab/modules/reactnative/libs/android.x86/libreactnative.so
+build /Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/x86/libferrum.so: CXX_SHARED_LIBRARY_LINKER__ferrum_Debug CMakeFiles/ferrum.dir/FerrumBindings.cpp.o CMakeFiles/ferrum.dir/FerrumJNIDispatch.cpp.o | /Users/kim/.gradle/caches/9.0.0/transforms/83198c47a1c402754cadaa99718025d1/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.x86/libfbjni.so /Users/kim/.gradle/caches/9.0.0/transforms/ebdf79766f4559f64a0c8b6c70cdb3d5/transformed/react-android-0.83.4-debug/prefab/modules/jsi/libs/android.x86/libjsi.so /Users/kim/.gradle/caches/9.0.0/transforms/ebdf79766f4559f64a0c8b6c70cdb3d5/transformed/react-android-0.83.4-debug/prefab/modules/reactnative/libs/android.x86/libreactnative.so
   LANGUAGE_COMPILE_FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++20 -frtti -fexceptions -fno-limit-debug-info
   LINK_FLAGS = -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--no-undefined-version -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments
   LINK_LIBRARIES = /Users/kim/.gradle/caches/9.0.0/transforms/83198c47a1c402754cadaa99718025d1/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.x86/libfbjni.so  /Users/kim/.gradle/caches/9.0.0/transforms/ebdf79766f4559f64a0c8b6c70cdb3d5/transformed/react-android-0.83.4-debug/prefab/modules/jsi/libs/android.x86/libjsi.so  /Users/kim/.gradle/caches/9.0.0/transforms/ebdf79766f4559f64a0c8b6c70cdb3d5/transformed/react-android-0.83.4-debug/prefab/modules/reactnative/libs/android.x86/libreactnative.so  -llog  -latomic -lm

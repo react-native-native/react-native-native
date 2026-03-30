@@ -23,6 +23,7 @@ include("${_PREFAB}/ReactAndroid/ReactAndroidConfig.cmake")
 
 add_library(ferrum SHARED
   FerrumBindings.cpp
+  FerrumJNIDispatch.cpp
 )
 
 target_link_libraries(ferrum

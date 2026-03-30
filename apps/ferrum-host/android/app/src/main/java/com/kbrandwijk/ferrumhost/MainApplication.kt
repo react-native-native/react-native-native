@@ -37,6 +37,10 @@ class MainApplication : Application(), ReactApplication {
       ReleaseLevel.STABLE
     }
     loadReactNative(this)
+    // Wire Ferrum module provider to the ReactHost
+    (reactHost as? com.facebook.react.runtime.ReactHostImpl)?.let {
+      expo.modules.ferrum.FerrumModuleProvider.setReactHost(it)
+    }
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
   }
 
