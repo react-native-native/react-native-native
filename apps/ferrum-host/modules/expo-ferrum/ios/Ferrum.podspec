@@ -10,16 +10,14 @@ Pod::Spec.new do |s|
   s.source         = { git: '' }
   s.static_framework = true
 
-  s.dependency 'hermes-engine'
   s.dependency 'React-Core'
   s.dependency 'React-jsi'
   s.dependency 'React-NativeModulesApple'
-  s.dependency 'React-callinvoker'
   s.dependency 'ReactCommon/turbomodule/core'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'OTHER_LDFLAGS' => '$(inherited) -lc++ -framework hermesvm',
+    'OTHER_LDFLAGS' => '$(inherited) -lc++',
     'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) HERMES_ENABLE_DEBUGGER=0',
   }
 

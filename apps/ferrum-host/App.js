@@ -1,212 +1,156 @@
-import { enableFerrum } from "./modules/expo-ferrum";
-enableFerrum();
-
 import { StatusBar } from "expo-status-bar";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   StyleSheet,
   Text,
   View,
   Vibration,
-  Clipboard,
   Pressable,
-  AppState,
-  NativeModules,
+  ScrollView,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// --- Synchronous benchmarks (run at module load) ---
+const TurboModuleRegistry = require("react-native/Libraries/TurboModule/TurboModuleRegistry");
+const SYNC_ROUNDS = 10000;
+const ASYNC_ROUNDS = 200;
 
-const iterations = 100000;
-let benchUs = "N/A";
-let start;
-try {
-  const abiBench = global.__ferrumGetModule?.("FerrumBench");
-  if (abiBench) {
-    start = performance.now();
-    for (let i = 0; i < iterations; i++) abiBench.add(i, i);
-    benchUs = (((performance.now() - start) * 1000) / iterations).toFixed(2);
-  }
-} catch (e) {}
+function bench(fn, isAsync) {
+  const rounds = isAsync ? ASYNC_ROUNDS : SYNC_ROUNDS;
+  for (let i = 0; i < 50; i++) fn(); // warmup
+  const t = performance.now();
+  for (let i = 0; i < rounds; i++) fn();
+  return (((performance.now() - t) * 1000) / rounds).toFixed(2);
+}
 
-// --- C ABI modules ---
-let cachedV1Bench = null;
-let cachedV2Bench = null;
-const ferrumVibration = global.__ferrumGetModule?.("Vibration");
-const ferrumClipboard = global.__ferrumGetModule?.("Clipboard");
-const ferrumAppState = global.__ferrumGetModule?.("AppState");
+function compare(moduleName, methodName, isAsync, ...methodArgs) {
+  const jsi = global.__ferrumGetJSIModule?.(moduleName);
+  const proxy = TurboModuleRegistry.getEnforcing(moduleName);
+  const direct = global.__ferrumGetModule?.(moduleName);
+  if (!proxy?.[methodName]) return "method not found";
+  const rounds = isAsync ? ASYNC_ROUNDS : SYNC_ROUNDS;
+  const jsiUs = jsi?.[methodName]
+    ? bench(() => jsi[methodName](...methodArgs), isAsync)
+    : "?";
+  const proxyUs = bench(() => proxy[methodName](...methodArgs), isAsync);
+  const directUs = direct?.[methodName]
+    ? bench(() => direct[methodName](...methodArgs), isAsync)
+    : "N/A";
+  return `JSI: ${jsiUs} · Proxy: ${proxyUs} · FFI: ${directUs} (${rounds}×)`;
+}
+
+const noop = () => {};
 
 export default function App() {
-  const [storageResult, setStorageResult] = useState("testing...");
-  const [vibrationResult, setVibrationResult] = useState("tap to test");
-  const [clipboardResult, setClipboardResult] = useState("tap to test");
-  const [appStateResult, setAppStateResult] = useState("tap to test");
+  const [results, setResults] = useState({});
+  const run = (key, fn) => setResults((r) => ({ ...r, [key]: fn() }));
 
-  useEffect(() => {
-    testAsyncStorage();
-  }, []);
-
-  async function testAsyncStorage() {
-    const rounds = 20;
-    const key = "ferrum_bench";
-    const val = "test_value";
-
-    function abiSetGet(mod, k, v) {
-      return new Promise((resolve) => {
-        mod.multiSet([[k, v]], () => {
-          mod.multiGet([k], (...args) => resolve(args));
-        });
-      });
-    }
-
-    // JSI
-    let jsiMs = "?";
-    try {
-      await AsyncStorage.setItem(key + "_jsi", val);
-      await AsyncStorage.getItem(key + "_jsi");
-      const t = performance.now();
-      for (let i = 0; i < rounds; i++) {
-        await AsyncStorage.setItem(key + "_jsi", val + i);
-        await AsyncStorage.getItem(key + "_jsi");
-      }
-      jsiMs = ((performance.now() - t) / rounds).toFixed(1);
-    } catch (e) {
-      jsiMs = "err";
-    }
-
-    // ABI — methods with callbacks are copied from JSI module
-    let abiMs = "?";
-    try {
-      const m = global.__ferrumGetModule?.("RNCAsyncStorage");
-      if (m && m.multiSet) {
-        await abiSetGet(m, key + "_abi", val);
-        const t = performance.now();
-        for (let i = 0; i < rounds; i++) {
-          await abiSetGet(m, key + "_abi", val + i);
-        }
-        abiMs = ((performance.now() - t) / rounds).toFixed(2);
-      } else {
-        abiMs = "N/A";
-      }
-    } catch (e) {
-      abiMs = "err: " + e.message;
-    }
-
-    setStorageResult(`JSI: ${jsiMs}ms · ABI: ${abiMs}ms (${rounds}x)`);
-  }
-
-  function testVibration() {
-    const rounds = 20;
-
-    const jsiStart = performance.now();
-    for (let i = 0; i < rounds; i++) Vibration.vibrate(1);
-    const jsiUs = (((performance.now() - jsiStart) * 1000) / rounds).toFixed(1);
-
-    let ferrumUs = "N/A";
-    if (ferrumVibration) {
-      const fStart = performance.now();
-      for (let i = 0; i < rounds; i++) ferrumVibration.vibrate(1);
-      ferrumUs = (((performance.now() - fStart) * 1000) / rounds).toFixed(1);
-    }
-
-    setVibrationResult(`JSI: ${jsiUs} · Ferrum: ${ferrumUs} μs`);
-  }
-
-  function testClipboard() {
-    const rounds = 20;
-
-    const jsiStart = performance.now();
-    for (let i = 0; i < rounds; i++) Clipboard.setString("jsi_" + i);
-    const jsiUs = (((performance.now() - jsiStart) * 1000) / rounds).toFixed(1);
-
-    let ferrumUs = "N/A";
-    if (ferrumClipboard) {
-      const fStart = performance.now();
-      for (let i = 0; i < rounds; i++) ferrumClipboard.setString("f_" + i);
-      ferrumUs = (((performance.now() - fStart) * 1000) / rounds).toFixed(1);
-    }
-
-    setClipboardResult(`JSI: ${jsiUs} · Ferrum: ${ferrumUs} μs`);
-  }
-
-  function testAppState() {
-    if (!ferrumAppState) {
-      setAppStateResult("module not found");
-      return;
-    }
-
-    const rounds = 20;
-    let completed = 0;
-    let jsiTotal = 0;
-    let abiTotal = 0;
-
-    // Run both in sequence
-    function runJSI(i) {
-      if (i >= rounds) {
-        runABI(0);
-        return;
-      }
-      const t = performance.now();
-      // JSI: AppState.currentState is sync
-      const _ = AppState.currentState;
-      jsiTotal += performance.now() - t;
-      runJSI(i + 1);
-    }
-
-    function runABI(i) {
-      if (i >= rounds) {
-        const jsiUs = ((jsiTotal * 1000) / rounds).toFixed(1);
-        const abiUs = ((abiTotal * 1000) / rounds).toFixed(1);
-        setAppStateResult(`JSI: ${jsiUs}μs · ABI: ${abiUs}μs (${rounds}x)`);
-        return;
-      }
-      const t = performance.now();
-      ferrumAppState.getCurrentAppState(
-        (state) => {
-          abiTotal += performance.now() - t;
-          runABI(i + 1);
-        },
-        () => {
-          abiTotal += performance.now() - t;
-          runABI(i + 1);
-        }
-      );
-    }
-
-    runJSI(0);
-  }
+  const cards = [
+    {
+      label: "import { Vibration } → vibrate(1)",
+      sub: "Real-world: RN wrapper → Ferrum proxy → typed objc_msgSend",
+      key: "realworld",
+      fn: () => {
+        Vibration.vibrate(1); // warmup / trigger lazy load
+        const rnUs = bench(() => Vibration.vibrate(1), true);
+        const proxy = TurboModuleRegistry.getEnforcing("Vibration");
+        const proxyUs = bench(() => proxy.vibrate(1), true);
+        return `RN import: ${rnUs} · Direct proxy: ${proxyUs} (${ASYNC_ROUNDS}×)`;
+      },
+    },
+    {
+      label: "Vibration.vibrate(1)",
+      sub: "void(double) — fire-and-forget",
+      key: "vibration",
+      fn: () => compare("Vibration", "vibrate", true, 1),
+    },
+    {
+      label: "Clipboard.setString()",
+      sub: "void(id) — ObjC object arg",
+      key: "clipboard",
+      fn: () => compare("Clipboard", "setString", true, "ferrum"),
+    },
+    {
+      label: "Appearance.getColorScheme()",
+      sub: "id() → NSString — sync return",
+      key: "appearance",
+      fn: () => {
+        const val = TurboModuleRegistry.getEnforcing("Appearance").getColorScheme?.();
+        return `"${val}" — ` + compare("Appearance", "getColorScheme", false);
+      },
+    },
+    {
+      label: "StatusBar.getHeight(cb)",
+      sub: "void(block) — callback arg",
+      key: "statusbar",
+      fn: () => compare("StatusBarManager", "getHeight", true, noop),
+    },
+    {
+      label: "StatusBar.setStyle(str, bool)",
+      sub: "void(id, BOOL) — mixed arg types",
+      key: "setstyle",
+      fn: () => compare("StatusBarManager", "setStyle", true, "default", false),
+    },
+    {
+      label: "StatusBar.setHidden(bool, str)",
+      sub: "void(BOOL, id) — reversed mixed types",
+      key: "sethidden",
+      fn: () => compare("StatusBarManager", "setHidden", true, false, "none"),
+    },
+    {
+      label: "Networking.clearCookies(cb)",
+      sub: "void(block) — callback pattern",
+      key: "networking",
+      fn: () => compare("Networking", "clearCookies", true, noop),
+    },
+    {
+      label: "Appearance.setColorScheme(str)",
+      sub: "void(id) — sync string arg",
+      key: "setscheme",
+      fn: () => compare("Appearance", "setColorScheme", true, "light"),
+    },
+    {
+      label: "Linking.canOpenURL(url, ✓, ✗)",
+      sub: "void(NSURL, resolve, reject) — RCTConvert",
+      key: "linking",
+      fn: () => {
+        // JSI: Promise method — pass only the URL, codegen adds resolve/reject
+        const jsi = global.__ferrumGetJSIModule?.("LinkingManager");
+        const jsiUs = jsi?.canOpenURL
+          ? bench(() => { try { jsi.canOpenURL("https://example.com"); } catch(e) {} }, true)
+          : "?";
+        // Proxy/FFI: void(NSURL, block, block) — pass all 3 args directly
+        const proxy = TurboModuleRegistry.getEnforcing("LinkingManager");
+        const direct = global.__ferrumGetModule?.("LinkingManager");
+        const proxyUs = bench(() => proxy.canOpenURL("https://example.com", noop, noop), true);
+        const directUs = direct?.canOpenURL
+          ? bench(() => direct.canOpenURL("https://example.com", noop, noop), true)
+          : "N/A";
+        return `JSI: ${jsiUs} · Proxy: ${proxyUs} · FFI: ${directUs} (${ASYNC_ROUNDS}×)`;
+      },
+    },
+  ];
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Project Ferrum</Text>
-      <Text style={styles.subtitle}>C ABI TurboModule Bridges</Text>
+      <Text style={styles.subtitle}>
+        JSI vs Proxy vs FFI — μs/call
+      </Text>
 
-      <View style={styles.resultBox}>
-        <Text style={styles.label}>Sync (100K calls)</Text>
-        <Text style={styles.result}>
-          FerrumBench.add: {benchUs}μs/call
-        </Text>
-      </View>
-
-      <View style={styles.resultBox}>
-        <Text style={styles.label}>AsyncStorage (set+get)</Text>
-        <Text style={styles.result}>{storageResult}</Text>
-      </View>
-
-      <Pressable style={styles.resultBox} onPress={testVibration}>
-        <Text style={styles.label}>Vibration.vibrate(1) — tap</Text>
-        <Text style={styles.result}>{vibrationResult}</Text>
-      </Pressable>
-
-      <Pressable style={styles.resultBox} onPress={testClipboard}>
-        <Text style={styles.label}>Clipboard.setString() — tap</Text>
-        <Text style={styles.result}>{clipboardResult}</Text>
-      </Pressable>
-
-      <Pressable style={styles.resultBox} onPress={testAppState}>
-        <Text style={styles.label}>AppState — tap</Text>
-        <Text style={styles.result}>{appStateResult}</Text>
-      </Pressable>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        {cards.map((card) => (
+          <Pressable
+            key={card.key}
+            style={styles.resultBox}
+            onPress={() => run(card.key, card.fn)}
+          >
+            <Text style={styles.label}>{card.label}</Text>
+            <Text style={styles.sub}>{card.sub}</Text>
+            <Text style={styles.result}>
+              {results[card.key] || "tap to test"}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
 
       <StatusBar style="light" />
     </View>
@@ -217,37 +161,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#1a1a2e",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-    gap: 10,
+    paddingTop: 60,
+    paddingHorizontal: 16,
   },
   title: {
     fontSize: 28,
     fontWeight: "700",
     color: "#e94560",
+    textAlign: "center",
     marginBottom: 2,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: "#8888aa",
+    textAlign: "center",
     marginBottom: 12,
   },
+  scroll: { flex: 1 },
+  scrollContent: { gap: 8, paddingBottom: 40 },
   resultBox: {
     backgroundColor: "#16213e",
     borderRadius: 12,
     padding: 14,
-    width: "100%",
   },
   label: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: "600",
     color: "#e94560",
-    textTransform: "uppercase",
-    marginBottom: 4,
+  },
+  sub: {
+    fontSize: 10,
+    color: "#666688",
+    marginBottom: 6,
   },
   result: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: "Courier",
     color: "#4ecca3",
     textAlign: "center",
