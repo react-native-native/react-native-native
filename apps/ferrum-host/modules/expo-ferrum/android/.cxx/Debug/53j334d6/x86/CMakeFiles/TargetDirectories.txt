@@ -1,0 +1,3 @@
+/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/.cxx/Debug/53j334d6/x86/CMakeFiles/ferrum.dir
+/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/.cxx/Debug/53j334d6/x86/CMakeFiles/edit_cache.dir
+/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/.cxx/Debug/53j334d6/x86/CMakeFiles/rebuild_cache.dir

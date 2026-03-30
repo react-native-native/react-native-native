@@ -1,6 +1,7 @@
 {
-  "platforms": ["ios"],
+  "platforms": ["ios", "android"],
   "ios": {
     "podName": "Ferrum"
-  }
+  },
+  "android": {}
 }

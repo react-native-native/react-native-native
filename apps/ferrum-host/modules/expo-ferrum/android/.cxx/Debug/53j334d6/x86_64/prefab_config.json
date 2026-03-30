@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "prefabPath": "/Users/kim/.gradle/caches/modules-2/files-2.1/com.google.prefab/cli/2.1.0/aa32fec809c44fa531f01dcfb739b5b3304d3050/cli-2.1.0-all.jar",
+  "packages": [
+    "/Users/kim/.gradle/caches/9.0.0/transforms/ebdf79766f4559f64a0c8b6c70cdb3d5/transformed/react-android-0.83.4-debug/prefab",
+    "/Users/kim/.gradle/caches/9.0.0/transforms/83198c47a1c402754cadaa99718025d1/transformed/fbjni-0.7.0/prefab"
+  ]
+}

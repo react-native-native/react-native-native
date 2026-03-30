@@ -1,0 +1,1 @@
+/Users/kim/dev/ferrum/apps/ferrum-host/modules/expo-ferrum/android/build/intermediates/cxx/Debug/53j334d6/obj/x86
