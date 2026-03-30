@@ -478,6 +478,150 @@ extern "C" void ferrum_install_abi_module_getter(void *rtPtr) {
     global.setProperty(rt, "__ferrumGetModule", getterV2);
     NSLog(@"[Ferrum] __ferrumGetModule installed on global");
 
+    // --- V3: Pure JSI path (no C ABI, no vendored Hermes) ---
+    // Same typed objc_msgSend dispatch, but registered as JSI host functions.
+    // Slightly more overhead (~0.5μs from HFContext) but zero Hermes changes.
+    auto getterJSI = facebook::jsi::Function::createFromHostFunction(
+        rt,
+        facebook::jsi::PropNameID::forAscii(rt, "__ferrumGetModuleJSI"),
+        1,
+        [](
+            facebook::jsi::Runtime &runtime,
+            const facebook::jsi::Value &thisVal,
+            const facebook::jsi::Value *args,
+            size_t count) -> facebook::jsi::Value {
+
+          if (count < 1 || !args[0].isString())
+            return facebook::jsi::Value::null();
+
+          std::string moduleName = args[0].getString(runtime).utf8(runtime);
+
+          auto nativeProxy = runtime.global().getProperty(runtime, "nativeModuleProxy");
+          if (!nativeProxy.isObject()) return facebook::jsi::Value::null();
+
+          auto moduleVal = nativeProxy.asObject(runtime).getProperty(
+              runtime, moduleName.c_str());
+          if (!moduleVal.isObject()) return facebook::jsi::Value::null();
+
+          auto moduleObj = moduleVal.asObject(runtime);
+
+          id objcInstance = extractObjCInstance(runtime, moduleObj);
+          if (!objcInstance) return facebook::jsi::Value::null();
+
+          NSLog(@"[Ferrum JSI] Building module for '%s'", moduleName.c_str());
+
+          // Create a plain JSI object
+          auto ferrumObj = facebook::jsi::Object(runtime);
+
+          int ffiCount = 0;
+          unsigned int methodCount = 0;
+          Class cls = [objcInstance class];
+          while (cls) {
+            Method *methods = class_copyMethodList(cls, &methodCount);
+            for (unsigned int i = 0; i < methodCount; i++) {
+              SEL sel = method_getName(methods[i]);
+              NSString *selName = NSStringFromSelector(sel);
+
+              if ([selName hasPrefix:@"_"] || [selName hasPrefix:@"."] ||
+                  [selName isEqualToString:@"init"] ||
+                  [selName isEqualToString:@"dealloc"] ||
+                  [selName isEqualToString:@"methodQueue"] ||
+                  [selName isEqualToString:@"moduleName"] ||
+                  [selName hasPrefix:@"constantsToExport"] ||
+                  [selName hasPrefix:@"getConstants"]) {
+                continue;
+              }
+
+              NSUInteger argCount = [[selName componentsSeparatedByString:@":"] count] - 1;
+
+              // Build the dispatch info (same as V2)
+              FerrumDispatchInfo *info = ferrum_dispatch_build(objcInstance, sel, (unsigned int)argCount);
+              if (!info) continue;
+
+              NSString *jsName = [selName componentsSeparatedByString:@":"][0];
+              const char *jsNameC = [jsName UTF8String];
+
+              // Capture dispatch info in a JSI host function
+              auto sharedInfo = std::make_shared<FerrumDispatchInfo>(*info);
+              ferrum_dispatch_free(info);
+
+              auto fn = facebook::jsi::Function::createFromHostFunction(
+                  runtime,
+                  facebook::jsi::PropNameID::forAscii(runtime, jsNameC),
+                  (unsigned int)argCount,
+                  [sharedInfo](
+                      facebook::jsi::Runtime &rt,
+                      const facebook::jsi::Value &thisVal,
+                      const facebook::jsi::Value *jsiArgs,
+                      size_t cnt) -> facebook::jsi::Value {
+
+                    // Convert jsi::Value args → HermesABIValue for the dispatcher
+                    // Primitives: direct extraction. Pointer types: not needed
+                    // for the dispatcher — it reads from HermesABIValue directly.
+                    //
+                    // Actually, the dispatcher expects HermesABIValue* but we have
+                    // jsi::Value*. Build ABI values from JSI values:
+                    HermesABIValue *abiArgs = (HermesABIValue *)calloc(cnt, sizeof(HermesABIValue));
+                    for (size_t i = 0; i < cnt; i++) {
+                      if (jsiArgs[i].isUndefined()) {
+                        abiArgs[i].kind = HermesABIValueKindUndefined;
+                      } else if (jsiArgs[i].isNull()) {
+                        abiArgs[i].kind = HermesABIValueKindNull;
+                      } else if (jsiArgs[i].isBool()) {
+                        abiArgs[i].kind = HermesABIValueKindBoolean;
+                        abiArgs[i].data.boolean = jsiArgs[i].getBool();
+                      } else if (jsiArgs[i].isNumber()) {
+                        abiArgs[i].kind = HermesABIValueKindNumber;
+                        abiArgs[i].data.number = jsiArgs[i].getNumber();
+                      } else if (jsiArgs[i].isString()) {
+                        // String: extract UTF-8, create ABI string
+                        std::string str = jsiArgs[i].getString(rt).utf8(rt);
+                        auto strOrErr = g_abiVt->create_string_from_utf8(
+                            g_abiRt, (const uint8_t *)str.c_str(), str.size());
+                        if (!(strOrErr.ptr_or_error & 1)) {
+                          abiArgs[i].kind = HermesABIValueKindString;
+                          abiArgs[i].data.pointer = (HermesABIManagedPointer *)strOrErr.ptr_or_error;
+                        }
+                      } else if (jsiArgs[i].isObject()) {
+                        // Object/function: use temp global bridge
+                        static const char *kTmp = "__fjsi";
+                        rt.global().setProperty(rt, kTmp, jsiArgs[i]);
+                        HermesABIPropNameID pn = makePropNameID(kTmp);
+                        HermesABIObject glob = g_abiVt->get_global_object(g_abiRt);
+                        auto val = g_abiVt->get_object_property_from_propnameid(g_abiRt, glob, pn);
+                        abiArgs[i] = val.value;
+                        rt.global().setProperty(rt, kTmp, facebook::jsi::Value::undefined());
+                        releasePointer(glob.pointer);
+                        releasePointer(pn.pointer);
+                      }
+                    }
+
+                    auto result = ferrum_dispatch_call(sharedInfo.get(), g_abiRt, g_abiVt, abiArgs, cnt);
+                    free(abiArgs);
+
+                    // Convert result back
+                    if (result.value.kind == HermesABIValueKindUndefined) return facebook::jsi::Value::undefined();
+                    if (result.value.kind == HermesABIValueKindNull) return facebook::jsi::Value(std::nullptr_t{});
+                    if (result.value.kind == HermesABIValueKindBoolean) return facebook::jsi::Value(static_cast<bool>(result.value.data.boolean));
+                    if (result.value.kind == HermesABIValueKindNumber) return facebook::jsi::Value(static_cast<double>(result.value.data.number));
+                    return facebook::jsi::Value::undefined();
+                  });
+
+              ferrumObj.setProperty(runtime, jsNameC, std::move(fn));
+              ffiCount++;
+            }
+            free(methods);
+            cls = class_getSuperclass(cls);
+            if (cls == [NSObject class]) break;
+          }
+
+          NSLog(@"[Ferrum JSI] '%s': %d methods", moduleName.c_str(), ffiCount);
+          return facebook::jsi::Value(runtime, ferrumObj);
+        });
+
+    global.setProperty(rt, "__ferrumGetModuleJSI", getterJSI);
+    NSLog(@"[Ferrum] __ferrumGetModuleJSI installed on global");
+
   } catch (const std::exception &e) {
     NSLog(@"[Ferrum] Exception installing getter: %s", e.what());
   }

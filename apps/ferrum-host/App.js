@@ -29,13 +29,9 @@ try {
 // --- C ABI modules ---
 let cachedV1Bench = null;
 let cachedV2Bench = null;
-const abiVibration = global.__ferrumGetModule?.("Vibration");
-const abiClipboard = global.__ferrumGetModule?.("Clipboard");
-const abiAppState = global.__ferrumGetModule?.("AppState");
-
-// V2: passthrough (reuses existing hostFn, no type reimplementation)
-const v2Vibration = global.__ferrumGetModule?.("Vibration");
-const v2Clipboard = global.__ferrumGetModule?.("Clipboard");
+const ferrumVibration = global.__ferrumGetModule?.("Vibration");
+const ferrumClipboard = global.__ferrumGetModule?.("Clipboard");
+const ferrumAppState = global.__ferrumGetModule?.("AppState");
 
 export default function App() {
   const [storageResult, setStorageResult] = useState("testing...");
@@ -85,7 +81,7 @@ export default function App() {
         for (let i = 0; i < rounds; i++) {
           await abiSetGet(m, key + "_abi", val + i);
         }
-        abiMs = ((performance.now() - t) / rounds).toFixed(1);
+        abiMs = ((performance.now() - t) / rounds).toFixed(2);
       } else {
         abiMs = "N/A";
       }
@@ -103,21 +99,14 @@ export default function App() {
     for (let i = 0; i < rounds; i++) Vibration.vibrate(1);
     const jsiUs = (((performance.now() - jsiStart) * 1000) / rounds).toFixed(1);
 
-    let abiUs = "N/A";
-    if (abiVibration) {
-      const abiStart = performance.now();
-      for (let i = 0; i < rounds; i++) abiVibration.vibrate(1);
-      abiUs = (((performance.now() - abiStart) * 1000) / rounds).toFixed(1);
+    let ferrumUs = "N/A";
+    if (ferrumVibration) {
+      const fStart = performance.now();
+      for (let i = 0; i < rounds; i++) ferrumVibration.vibrate(1);
+      ferrumUs = (((performance.now() - fStart) * 1000) / rounds).toFixed(1);
     }
 
-    let v2Us = "N/A";
-    if (v2Vibration) {
-      const v2Start = performance.now();
-      for (let i = 0; i < rounds; i++) v2Vibration.vibrate(1);
-      v2Us = (((performance.now() - v2Start) * 1000) / rounds).toFixed(1);
-    }
-
-    setVibrationResult(`JSI: ${jsiUs} · V1: ${abiUs} · V2: ${v2Us} μs`);
+    setVibrationResult(`JSI: ${jsiUs} · Ferrum: ${ferrumUs} μs`);
   }
 
   function testClipboard() {
@@ -127,25 +116,18 @@ export default function App() {
     for (let i = 0; i < rounds; i++) Clipboard.setString("jsi_" + i);
     const jsiUs = (((performance.now() - jsiStart) * 1000) / rounds).toFixed(1);
 
-    let abiUs = "N/A";
-    if (abiClipboard) {
-      const abiStart = performance.now();
-      for (let i = 0; i < rounds; i++) abiClipboard.setString("abi_" + i);
-      abiUs = (((performance.now() - abiStart) * 1000) / rounds).toFixed(1);
+    let ferrumUs = "N/A";
+    if (ferrumClipboard) {
+      const fStart = performance.now();
+      for (let i = 0; i < rounds; i++) ferrumClipboard.setString("f_" + i);
+      ferrumUs = (((performance.now() - fStart) * 1000) / rounds).toFixed(1);
     }
 
-    let v2Us = "N/A";
-    if (v2Clipboard) {
-      const v2Start = performance.now();
-      for (let i = 0; i < rounds; i++) v2Clipboard.setString("v2_" + i);
-      v2Us = (((performance.now() - v2Start) * 1000) / rounds).toFixed(1);
-    }
-
-    setClipboardResult(`JSI: ${jsiUs} · V1: ${abiUs} · V2: ${v2Us} μs`);
+    setClipboardResult(`JSI: ${jsiUs} · Ferrum: ${ferrumUs} μs`);
   }
 
   function testAppState() {
-    if (!abiAppState) {
+    if (!ferrumAppState) {
       setAppStateResult("module not found");
       return;
     }
@@ -176,7 +158,7 @@ export default function App() {
         return;
       }
       const t = performance.now();
-      abiAppState.getCurrentAppState(
+      ferrumAppState.getCurrentAppState(
         (state) => {
           abiTotal += performance.now() - t;
           runABI(i + 1);

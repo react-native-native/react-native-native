@@ -1,17 +1,17 @@
-/// Ferrum FFI Dispatch — generic typed objc_msgSend from ABI values.
-/// Resolves the correct dispatch function at registration time (once per method).
-/// At call time: single function pointer dereference — same overhead as V1 codegen.
+/// Ferrum FFI Dispatch — typed objc_msgSend from ObjC runtime type info.
+/// Pure JSI path: no C ABI, no vendored Hermes.
 
 #import <Foundation/Foundation.h>
 #import <React/RCTBridgeModule.h>
 #include <ReactCommon/CallInvoker.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
-#include <hermes_abi/hermes_abi.h>
+#include <jsi/jsi.h>
 #import "FerrumFFIDispatch.h"
-#import "FerrumABIHelpers.h"
 
-// --- Arg kind from ObjC type encoding ---
+using namespace facebook;
+
+// --- Arg kind enum ---
 
 enum class AKind { Void, Double, Float, Int, LongLong, Bool, Object, Block, Unknown };
 
@@ -20,318 +20,179 @@ static AKind kindFromEncoding(const char *enc) {
     case _C_VOID: return AKind::Void;
     case _C_DBL:  return AKind::Double;
     case _C_FLT:  return AKind::Float;
-    case _C_INT:  case _C_UINT: return AKind::Int;
-    case _C_LNG:  case _C_ULNG: case _C_LNG_LNG: case _C_ULNG_LNG: return AKind::LongLong;
-    case _C_SHT:  case _C_USHT: return AKind::Int;
-    case _C_CHR:  case _C_UCHR: case _C_BOOL: return AKind::Bool;
+    case _C_INT: case _C_UINT: return AKind::Int;
+    case _C_LNG: case _C_ULNG: case _C_LNG_LNG: case _C_ULNG_LNG: return AKind::LongLong;
+    case _C_SHT: case _C_USHT: return AKind::Int;
+    case _C_CHR: case _C_UCHR: case _C_BOOL: return AKind::Bool;
     case _C_ID:
-      if (enc[1] == '?') return AKind::Block; // @? = block type
+      if (enc[1] == '?') return AKind::Block;
       return AKind::Object;
     case _C_CLASS: return AKind::Object;
     default: return AKind::Unknown;
   }
 }
 
-// FerrumDispatchInfo and FerrumCallFn defined in FerrumFFIDispatch.h
+// --- Global CallInvoker for async callbacks ---
 
-// --- Global state (set by FerrumRuntimeFactory) ---
+static std::shared_ptr<facebook::react::CallInvoker> *g_invoker = nullptr;
 
-static HermesABIRuntime *g_dispatchAbiRt = nullptr;
-static const HermesABIRuntimeVTable *g_dispatchAbiVt = nullptr;
-static std::shared_ptr<facebook::react::CallInvoker> *g_dispatchInvoker = nullptr;
-
-void ferrum_dispatch_set_globals(
-    HermesABIRuntime *rt,
-    const HermesABIRuntimeVTable *vt,
-    void *invokerPtr) {
-  g_dispatchAbiRt = rt;
-  g_dispatchAbiVt = vt;
-  if (invokerPtr) {
-    g_dispatchInvoker = reinterpret_cast<std::shared_ptr<facebook::react::CallInvoker> *>(invokerPtr);
-  }
+void ferrum_dispatch_set_globals(void *invokerPtr) {
+  if (invokerPtr)
+    g_invoker = reinterpret_cast<std::shared_ptr<facebook::react::CallInvoker> *>(invokerPtr);
 }
 
-// --- Arg extraction helpers ---
+// --- JSI arg extraction helpers ---
 
-static inline double getNum(const HermesABIValue *v) { return v->data.number; }
-static inline BOOL getBool(const HermesABIValue *v) { return v->data.boolean; }
-static id getObj(HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *v) {
-  if (v->kind == HermesABIValueKindString) return ferrum_abi_get_string(rt, vt, v);
-  if (v->kind == HermesABIValueKindNull || v->kind == HermesABIValueKindUndefined) return nil;
-  if (v->kind == HermesABIValueKindObject) return ferrum_abi_get_array(rt, vt, v);
+static inline double getNum(const jsi::Value &v) { return v.getNumber(); }
+static inline bool getBool(const jsi::Value &v) { return v.getBool(); }
+static NSString *getStr(jsi::Runtime &rt, const jsi::Value &v) {
+  if (v.isString()) return [NSString stringWithUTF8String:v.getString(rt).utf8(rt).c_str()];
   return nil;
 }
+static id jsiToObjC(jsi::Runtime &rt, const jsi::Value &v);
 
-// --- Block wrapping: JS function → ObjC RCTResponseSenderBlock ---
+static NSArray *getArray(jsi::Runtime &rt, const jsi::Value &v) {
+  if (!v.isObject()) return @[];
+  auto obj = v.asObject(rt);
+  if (!obj.isArray(rt)) return @[];
+  auto arr = obj.asArray(rt);
+  size_t len = arr.size(rt);
+  NSMutableArray *result = [NSMutableArray arrayWithCapacity:len];
+  for (size_t i = 0; i < len; i++) {
+    id elem = jsiToObjC(rt, arr.getValueAtIndex(rt, i));
+    [result addObject:elem ?: [NSNull null]];
+  }
+  return result;
+}
 
-/// Convert HermesABIValue (JS function) → RCTResponseSenderBlock.
-/// The block captures the cloned function and calls it back on the JS thread
-/// via CallInvoker when the native code invokes it.
+static NSDictionary *getDict(jsi::Runtime &rt, const jsi::Value &v) {
+  if (!v.isObject()) return @{};
+  auto obj = v.asObject(rt);
+  auto names = obj.getPropertyNames(rt);
+  size_t len = names.size(rt);
+  NSMutableDictionary *result = [NSMutableDictionary dictionaryWithCapacity:len];
+  for (size_t i = 0; i < len; i++) {
+    auto key = names.getValueAtIndex(rt, i).getString(rt).utf8(rt);
+    id val = jsiToObjC(rt, obj.getProperty(rt, key.c_str()));
+    if (val) result[[NSString stringWithUTF8String:key.c_str()]] = val;
+  }
+  return result;
+}
+
+static id jsiToObjC(jsi::Runtime &rt, const jsi::Value &v) {
+  if (v.isNull() || v.isUndefined()) return [NSNull null];
+  if (v.isBool()) return @(v.getBool());
+  if (v.isNumber()) return @(v.getNumber());
+  if (v.isString()) return getStr(rt, v);
+  if (v.isObject()) {
+    auto obj = v.asObject(rt);
+    if (obj.isArray(rt)) return getArray(rt, v);
+    return getDict(rt, v);
+  }
+  return [NSNull null];
+}
+
+static id getObj(jsi::Runtime &rt, const jsi::Value &v) {
+  return jsiToObjC(rt, v);
+}
+
+// --- Block wrapping: jsi::Function → ObjC RCTResponseSenderBlock ---
+
 typedef void (^RCTResponseSenderBlock)(NSArray *);
 
-static RCTResponseSenderBlock getBlock(
-    HermesABIRuntime *rt,
-    const HermesABIRuntimeVTable *vt,
-    const HermesABIValue *v) {
-  if (v->kind != HermesABIValueKindObject) {
+static RCTResponseSenderBlock getBlock(jsi::Runtime &rt, const jsi::Value &v) {
+  if (!v.isObject() || !v.asObject(rt).isFunction(rt)) {
     return ^(NSArray *r) {};
   }
 
-  // Clone the JS function — GC roots keep it alive
-  HermesABIObject fn = {v->data.pointer};
-  HermesABIObject clonedFn = vt->clone_object(rt, fn);
-  HermesABIManagedPointer *fnPtr = clonedFn.pointer;
+  // Share the JS function via a shared_ptr so the block can own it
+  auto fn = std::make_shared<jsi::Function>(v.asObject(rt).asFunction(rt));
+  jsi::Runtime *rtPtr = &rt;
 
   return [^(NSArray *response) {
-    if (!g_dispatchInvoker || !*g_dispatchInvoker) return;
-    (*g_dispatchInvoker)->invokeAsync([=]() {
-      // Convert each NSArray element to HermesABIValue
-      size_t argCount = response.count;
-      HermesABIValue *args = (HermesABIValue *)calloc(argCount, sizeof(HermesABIValue));
-      for (size_t i = 0; i < argCount; i++) {
+    if (!g_invoker || !*g_invoker) return;
+    (*g_invoker)->invokeAsync([fn, rtPtr, response]() {
+      auto &rt = *rtPtr;
+      size_t argc = response.count;
+      std::vector<jsi::Value> args;
+      args.reserve(argc);
+      for (size_t i = 0; i < argc; i++) {
         id obj = response[i];
         if (!obj || [obj isKindOfClass:[NSNull class]]) {
-          args[i].kind = HermesABIValueKindNull;
+          args.push_back(jsi::Value::null());
         } else if ([obj isKindOfClass:[NSNumber class]]) {
-          args[i].kind = HermesABIValueKindNumber;
-          args[i].data.number = [obj doubleValue];
+          NSNumber *num = obj;
+          if (strcmp([num objCType], @encode(BOOL)) == 0 ||
+              strcmp([num objCType], @encode(char)) == 0) {
+            args.push_back(jsi::Value(static_cast<bool>([num boolValue])));
+          } else {
+            args.push_back(jsi::Value(static_cast<double>([num doubleValue])));
+          }
         } else if ([obj isKindOfClass:[NSString class]]) {
-          args[i] = ferrum_abi_from_string(g_dispatchAbiRt, g_dispatchAbiVt, obj).value;
+          args.push_back(jsi::String::createFromUtf8(rt, [(NSString *)obj UTF8String]));
+        } else if ([obj isKindOfClass:[NSArray class]]) {
+          NSArray *arr = obj;
+          auto jsArr = jsi::Array(rt, arr.count);
+          for (NSUInteger j = 0; j < arr.count; j++) {
+            id elem = arr[j];
+            if (!elem || [elem isKindOfClass:[NSNull class]])
+              jsArr.setValueAtIndex(rt, j, jsi::Value::null());
+            else if ([elem isKindOfClass:[NSNumber class]])
+              jsArr.setValueAtIndex(rt, j, jsi::Value(static_cast<double>([elem doubleValue])));
+            else if ([elem isKindOfClass:[NSString class]])
+              jsArr.setValueAtIndex(rt, j, jsi::String::createFromUtf8(rt, [(NSString *)elem UTF8String]));
+            else if ([elem isKindOfClass:[NSArray class]]) {
+              // Nested array — recursive would be cleaner but inline for 2 levels
+              NSArray *inner = elem;
+              auto jsInner = jsi::Array(rt, inner.count);
+              for (NSUInteger k = 0; k < inner.count; k++) {
+                id ie = inner[k];
+                if (!ie || [ie isKindOfClass:[NSNull class]])
+                  jsInner.setValueAtIndex(rt, k, jsi::Value::null());
+                else if ([ie isKindOfClass:[NSString class]])
+                  jsInner.setValueAtIndex(rt, k, jsi::String::createFromUtf8(rt, [(NSString *)ie UTF8String]));
+                else if ([ie isKindOfClass:[NSNumber class]])
+                  jsInner.setValueAtIndex(rt, k, jsi::Value(static_cast<double>([ie doubleValue])));
+                else
+                  jsInner.setValueAtIndex(rt, k, jsi::Value::null());
+              }
+              jsArr.setValueAtIndex(rt, j, std::move(jsInner));
+            } else
+              jsArr.setValueAtIndex(rt, j, jsi::Value::null());
+          }
+          args.push_back(std::move(jsArr));
         } else {
-          args[i] = ferrum_abi_from_object(g_dispatchAbiRt, g_dispatchAbiVt, obj).value;
+          args.push_back(jsi::Value::null());
         }
       }
-      HermesABIValue thisArg;
-      thisArg.kind = HermesABIValueKindUndefined;
-      HermesABIFunction jsFn;
-      jsFn.pointer = fnPtr;
-      g_dispatchAbiVt->call(g_dispatchAbiRt, jsFn, &thisArg, args, argCount);
-      free(args);
-      fnPtr->vtable->invalidate(fnPtr);
+      const jsi::Value *argsPtr = args.empty() ? nullptr : args.data();
+      fn->call(rt, argsPtr, argc);
     });
   } copy];
 }
 
-// ============================================================================
-// Resolved dispatch functions — each handles one specific type pattern.
-// At call time: one function pointer dereference, then straight to objc_msgSend.
-// ============================================================================
-
-// --- VOID RETURN (dispatch_async) ---
-
-static HermesABIValueOrError ffi_void_0(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue*, size_t) {
-  id inst = i->instance; SEL s = i->selector;
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL))objc_msgSend)(inst, s); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_1_double(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector; double a0 = getNum(&args[0]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,double))objc_msgSend)(inst, s, a0); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_1_bool(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector; BOOL a0 = getBool(&args[0]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,BOOL))objc_msgSend)(inst, s, a0); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_1_obj(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector; id a0 = getObj(rt, vt, &args[0]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,id))objc_msgSend)(inst, s, a0); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_1_int(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector; int a0 = (int)getNum(&args[0]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,int))objc_msgSend)(inst, s, a0); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_2_double_double(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector;
-  double a0 = getNum(&args[0]), a1 = getNum(&args[1]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,double,double))objc_msgSend)(inst, s, a0, a1); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_2_obj_obj(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector;
-  id a0 = getObj(rt, vt, &args[0]), a1 = getObj(rt, vt, &args[1]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,id,id))objc_msgSend)(inst, s, a0, a1); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-// --- VOID + BLOCK args (async with callbacks) ---
-
-static HermesABIValueOrError ffi_void_1_block(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector;
-  RCTResponseSenderBlock b0 = getBlock(rt, vt, &args[0]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,id))objc_msgSend)(inst, s, b0); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_2_block_block(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector;
-  RCTResponseSenderBlock b0 = getBlock(rt, vt, &args[0]), b1 = getBlock(rt, vt, &args[1]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,id,id))objc_msgSend)(inst, s, b0, b1); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_2_obj_block(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector;
-  id a0 = getObj(rt, vt, &args[0]);
-  RCTResponseSenderBlock b1 = getBlock(rt, vt, &args[1]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,id,id))objc_msgSend)(inst, s, a0, b1); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_3_obj_obj_block(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector;
-  id a0 = getObj(rt, vt, &args[0]), a1 = getObj(rt, vt, &args[1]);
-  RCTResponseSenderBlock b2 = getBlock(rt, vt, &args[2]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,id,id,id))objc_msgSend)(inst, s, a0, a1, b2); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_2_obj_double(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector;
-  id a0 = getObj(rt, vt, &args[0]); double a1 = getNum(&args[1]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,id,double))objc_msgSend)(inst, s, a0, a1); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-static HermesABIValueOrError ffi_void_3_obj_obj_obj(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id inst = i->instance; SEL s = i->selector;
-  id a0 = getObj(rt, vt, &args[0]), a1 = getObj(rt, vt, &args[1]), a2 = getObj(rt, vt, &args[2]);
-  dispatch_async(i->methodQueue, ^{ ((void(*)(id,SEL,id,id,id))objc_msgSend)(inst, s, a0, a1, a2); });
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindUndefined; return r;
-}
-
-// --- DOUBLE RETURN (sync) ---
-
-static HermesABIValueOrError ffi_double_0(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue*, size_t) {
-  double ret = ((double(*)(id,SEL))objc_msgSend)(i->instance, i->selector);
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindNumber; r.value.data.number = ret; return r;
-}
-
-static HermesABIValueOrError ffi_double_1_double(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
-  double ret = ((double(*)(id,SEL,double))objc_msgSend)(i->instance, i->selector, getNum(&args[0]));
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindNumber; r.value.data.number = ret; return r;
-}
-
-static HermesABIValueOrError ffi_double_2_double_double(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
-  double ret = ((double(*)(id,SEL,double,double))objc_msgSend)(i->instance, i->selector, getNum(&args[0]), getNum(&args[1]));
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindNumber; r.value.data.number = ret; return r;
-}
-
-// --- BOOL RETURN (sync) ---
-
-static HermesABIValueOrError ffi_bool_0(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue*, size_t) {
-  BOOL ret = ((BOOL(*)(id,SEL))objc_msgSend)(i->instance, i->selector);
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindBoolean; r.value.data.boolean = ret; return r;
-}
-
-static HermesABIValueOrError ffi_bool_1_bool(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
-  BOOL ret = ((BOOL(*)(id,SEL,BOOL))objc_msgSend)(i->instance, i->selector, getBool(&args[0]));
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindBoolean; r.value.data.boolean = ret; return r;
-}
-
-// --- NUMERIC OBJECT RETURN (sync) ---
-// Methods returning NSNumber* — unwrap directly without runtime type inspection.
-// Resolved when we detect the return encoding is '@' but the method name/context
-// suggests a numeric return (or we could check at registration time).
-
-static inline HermesABIValueOrError numResult(id ret) {
-  HermesABIValueOrError r;
-  r.value.kind = HermesABIValueKindNumber;
-  r.value.data.number = [ret doubleValue];
-  return r;
-}
-
-static HermesABIValueOrError ffi_numobj_0(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue*, size_t) {
-  return numResult(((id(*)(id,SEL))objc_msgSend)(i->instance, i->selector));
-}
-
-static HermesABIValueOrError ffi_numobj_1_double(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
-  return numResult(((id(*)(id,SEL,double))objc_msgSend)(i->instance, i->selector, getNum(&args[0])));
-}
-
-static HermesABIValueOrError ffi_numobj_1_bool(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
-  return numResult(((id(*)(id,SEL,BOOL))objc_msgSend)(i->instance, i->selector, getBool(&args[0])));
-}
-
-static HermesABIValueOrError ffi_numobj_2_double_double(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue *args, size_t) {
-  return numResult(((id(*)(id,SEL,double,double))objc_msgSend)(i->instance, i->selector, getNum(&args[0]), getNum(&args[1])));
-}
-
-// --- GENERIC OBJECT RETURN (sync) ---
-
-static HermesABIValueOrError ffi_obj_0(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue*, size_t) {
-  id ret = ((id(*)(id,SEL))objc_msgSend)(i->instance, i->selector);
-  return ferrum_abi_from_object(rt, vt, ret);
-}
-
-static HermesABIValueOrError ffi_obj_1_obj(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id ret = ((id(*)(id,SEL,id))objc_msgSend)(i->instance, i->selector, getObj(rt, vt, &args[0]));
-  return ferrum_abi_from_object(rt, vt, ret);
-}
-
-static HermesABIValueOrError ffi_obj_1_double(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id ret = ((id(*)(id,SEL,double))objc_msgSend)(i->instance, i->selector, getNum(&args[0]));
-  return ferrum_abi_from_object(rt, vt, ret);
-}
-
-static HermesABIValueOrError ffi_obj_1_bool(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id ret = ((id(*)(id,SEL,BOOL))objc_msgSend)(i->instance, i->selector, getBool(&args[0]));
-  return ferrum_abi_from_object(rt, vt, ret);
-}
-
-static HermesABIValueOrError ffi_obj_2_double_double(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id ret = ((id(*)(id,SEL,double,double))objc_msgSend)(i->instance, i->selector, getNum(&args[0]), getNum(&args[1]));
-  return ferrum_abi_from_object(rt, vt, ret);
-}
-
-static HermesABIValueOrError ffi_obj_2_obj_obj(const FerrumDispatchInfo *i, HermesABIRuntime *rt, const HermesABIRuntimeVTable *vt, const HermesABIValue *args, size_t) {
-  id ret = ((id(*)(id,SEL,id,id))objc_msgSend)(i->instance, i->selector, getObj(rt, vt, &args[0]), getObj(rt, vt, &args[1]));
-  return ferrum_abi_from_object(rt, vt, ret);
-}
-
-// --- INT/LONGLONG RETURN (sync) ---
-
-static HermesABIValueOrError ffi_int_0(const FerrumDispatchInfo *i, HermesABIRuntime*, const HermesABIRuntimeVTable*, const HermesABIValue*, size_t) {
-  long long ret = ((long long(*)(id,SEL))objc_msgSend)(i->instance, i->selector);
-  HermesABIValueOrError r; r.value.kind = HermesABIValueKindNumber; r.value.data.number = (double)ret; return r;
-}
-
-// ============================================================================
-// Registration: resolve type encoding → function pointer (once per method)
-// ============================================================================
-
-extern "C" {
+// ---------------------------------------------------------------------------
+// Registration: parse type encoding → store kinds
+// ---------------------------------------------------------------------------
 
 FerrumDispatchInfo *ferrum_dispatch_build(id instance, SEL selector, unsigned int expectedArgs) {
   Method m = class_getInstanceMethod([instance class], selector);
 
-  // Verify arg count matches (numberOfArguments includes self + _cmd)
   if (m && expectedArgs > 0) {
     NSMethodSignature *sig = [instance methodSignatureForSelector:selector];
     if (sig && [sig numberOfArguments] - 2 != expectedArgs) {
-      m = nullptr; // wrong arg count, fall through to scan
+      m = nullptr;
     }
   }
 
   if (!m) {
-    // JS name → ObjC selector: scan for prefix + ':'
     NSString *selName = NSStringFromSelector(selector);
     NSString *prefix = [selName stringByAppendingString:@":"];
-    // Scan class hierarchy for matching selector
     Class cls = [instance class];
     while (cls && !m) {
-      unsigned int methodCount = 0;
-      Method *methods = class_copyMethodList(cls, &methodCount);
-      for (unsigned int i = 0; i < methodCount; i++) {
+      unsigned int mc = 0;
+      Method *methods = class_copyMethodList(cls, &mc);
+      for (unsigned int i = 0; i < mc; i++) {
         NSString *name = NSStringFromSelector(method_getName(methods[i]));
         if ([name hasPrefix:prefix]) {
           m = methods[i];
@@ -351,107 +212,163 @@ FerrumDispatchInfo *ferrum_dispatch_build(id instance, SEL selector, unsigned in
   AKind retKind = kindFromEncoding([sig methodReturnType]);
   if (retKind == AKind::Unknown) return nullptr;
 
-  NSUInteger nargs = [sig numberOfArguments] - 2; // skip self, _cmd
+  NSUInteger nargs = [sig numberOfArguments] - 2;
+  if (nargs > 4) return nullptr;
+
   AKind argKinds[4];
-  if (nargs > 4) return nullptr; // too many args for our patterns
   for (NSUInteger i = 0; i < nargs; i++) {
     argKinds[i] = kindFromEncoding([sig getArgumentTypeAtIndex:i + 2]);
     if (argKinds[i] == AKind::Unknown) return nullptr;
   }
 
-  // --- Resolve to specific function pointer ---
-  FerrumCallFn callFn = nullptr;
-
-  if (retKind == AKind::Void) {
-    if (nargs == 0) callFn = ffi_void_0;
-    else if (nargs == 1 && argKinds[0] == AKind::Double) callFn = ffi_void_1_double;
-    else if (nargs == 1 && argKinds[0] == AKind::Bool)   callFn = ffi_void_1_bool;
-    else if (nargs == 1 && argKinds[0] == AKind::Object)  callFn = ffi_void_1_obj;
-    else if (nargs == 1 && argKinds[0] == AKind::Int)     callFn = ffi_void_1_int;
-    else if (nargs == 2 && argKinds[0] == AKind::Double && argKinds[1] == AKind::Double) callFn = ffi_void_2_double_double;
-    else if (nargs == 2 && argKinds[0] == AKind::Object && argKinds[1] == AKind::Object) callFn = ffi_void_2_obj_obj;
-    else if (nargs == 2 && argKinds[0] == AKind::Object && argKinds[1] == AKind::Double) callFn = ffi_void_2_obj_double;
-    else if (nargs == 3 && argKinds[0] == AKind::Object && argKinds[1] == AKind::Object && argKinds[2] == AKind::Object) callFn = ffi_void_3_obj_obj_obj;
-    // Block (callback) patterns
-    else if (nargs == 1 && argKinds[0] == AKind::Block) callFn = ffi_void_1_block;
-    else if (nargs == 2 && argKinds[0] == AKind::Block && argKinds[1] == AKind::Block) callFn = ffi_void_2_block_block;
-    else if (nargs == 2 && argKinds[0] == AKind::Object && argKinds[1] == AKind::Block) callFn = ffi_void_2_obj_block;
-    else if (nargs == 3 && argKinds[0] == AKind::Object && argKinds[1] == AKind::Object && argKinds[2] == AKind::Block) callFn = ffi_void_3_obj_obj_block;
-  } else if (retKind == AKind::Double) {
-    if (nargs == 0) callFn = ffi_double_0;
-    else if (nargs == 1 && argKinds[0] == AKind::Double) callFn = ffi_double_1_double;
-    else if (nargs == 2 && argKinds[0] == AKind::Double && argKinds[1] == AKind::Double) callFn = ffi_double_2_double_double;
-  } else if (retKind == AKind::Bool) {
-    if (nargs == 0) callFn = ffi_bool_0;
-    else if (nargs == 1 && argKinds[0] == AKind::Bool) callFn = ffi_bool_1_bool;
-  } else if (retKind == AKind::Object) {
-    // Check if all args are primitives — strong signal the return is NSNumber*
-    // (e.g., add:(double)a b:(double)b → NSNumber*, negate:(BOOL)a → NSNumber*)
-    // Use numobj variants that call [result doubleValue] directly.
-    bool allPrimitive = true;
-    for (NSUInteger i = 0; i < nargs; i++) {
-      if (argKinds[i] != AKind::Double && argKinds[i] != AKind::Bool &&
-          argKinds[i] != AKind::Int && argKinds[i] != AKind::LongLong &&
-          argKinds[i] != AKind::Float) {
-        allPrimitive = false;
-        break;
-      }
-    }
-
-    if (allPrimitive) {
-      // Numeric object return — unwrap directly
-      if (nargs == 0) callFn = ffi_numobj_0;
-      else if (nargs == 1 && argKinds[0] == AKind::Double) callFn = ffi_numobj_1_double;
-      else if (nargs == 1 && argKinds[0] == AKind::Bool)   callFn = ffi_numobj_1_bool;
-      else if (nargs == 2 && argKinds[0] == AKind::Double && argKinds[1] == AKind::Double) callFn = ffi_numobj_2_double_double;
-    }
-
-    // Generic object return
-    if (!callFn) {
-      if (nargs == 0) callFn = ffi_obj_0;
-      else if (nargs == 1 && argKinds[0] == AKind::Object) callFn = ffi_obj_1_obj;
-      else if (nargs == 1 && argKinds[0] == AKind::Double) callFn = ffi_obj_1_double;
-      else if (nargs == 1 && argKinds[0] == AKind::Bool)   callFn = ffi_obj_1_bool;
-      else if (nargs == 2 && argKinds[0] == AKind::Double && argKinds[1] == AKind::Double) callFn = ffi_obj_2_double_double;
-      else if (nargs == 2 && argKinds[0] == AKind::Object && argKinds[1] == AKind::Object) callFn = ffi_obj_2_obj_obj;
-    }
-  } else if (retKind == AKind::Int || retKind == AKind::LongLong) {
-    if (nargs == 0) callFn = ffi_int_0;
-  }
-
-  if (!callFn) {
-    NSLog(@"[Ferrum FFI] No pattern for %@ (ret=%d, %lu args)",
-          NSStringFromSelector(selector), (int)retKind, (unsigned long)nargs);
-    return nullptr;
-  }
-
   auto *info = new FerrumDispatchInfo();
   info->instance = instance;
   info->selector = selector;
-  info->callFn = callFn;
+  info->retKind = (int)retKind;
+  info->argCount = (unsigned int)nargs;
+  for (unsigned int i = 0; i < nargs; i++)
+    info->argKinds[i] = (int)argKinds[i];
 
-  if ([instance respondsToSelector:@selector(methodQueue)]) {
+  if ([instance respondsToSelector:@selector(methodQueue)])
     info->methodQueue = [(id<RCTBridgeModule>)instance methodQueue];
-  } else {
+  else
     info->methodQueue = dispatch_get_main_queue();
-  }
 
-  NSLog(@"[Ferrum FFI] Resolved %@ → %p", NSStringFromSelector(selector), (void *)callFn);
   return info;
 }
 
-HermesABIValueOrError ferrum_dispatch_call(
+// ---------------------------------------------------------------------------
+// Call: typed objc_msgSend from jsi::Value args
+// ---------------------------------------------------------------------------
+
+jsi::Value ferrum_dispatch_call_jsi(
     const FerrumDispatchInfo *info,
-    HermesABIRuntime *abiRt,
-    const HermesABIRuntimeVTable *vt,
-    const HermesABIValue *args,
+    jsi::Runtime &rt,
+    const jsi::Value *args,
     size_t count) {
-  // Single function pointer dereference — resolved at registration time
-  return info->callFn(info, abiRt, vt, args, count);
+
+  id inst = info->instance;
+  SEL sel = info->selector;
+  AKind ret = (AKind)info->retKind;
+  unsigned int nargs = info->argCount;
+
+  // --- VOID RETURN (dispatch_async) ---
+  if (ret == AKind::Void) {
+    dispatch_queue_t q = info->methodQueue;
+    AKind k0 = nargs > 0 ? (AKind)info->argKinds[0] : AKind::Void;
+    AKind k1 = nargs > 1 ? (AKind)info->argKinds[1] : AKind::Void;
+    AKind k2 = nargs > 2 ? (AKind)info->argKinds[2] : AKind::Void;
+
+    if (nargs == 0) {
+      dispatch_async(q, ^{ ((void(*)(id,SEL))objc_msgSend)(inst, sel); });
+    } else if (nargs == 1 && k0 == AKind::Double) {
+      double a0 = getNum(args[0]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,double))objc_msgSend)(inst, sel, a0); });
+    } else if (nargs == 1 && k0 == AKind::Bool) {
+      BOOL a0 = getBool(args[0]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,BOOL))objc_msgSend)(inst, sel, a0); });
+    } else if (nargs == 1 && k0 == AKind::Object) {
+      id a0 = getObj(rt, args[0]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,id))objc_msgSend)(inst, sel, a0); });
+    } else if (nargs == 1 && k0 == AKind::Int) {
+      int a0 = (int)getNum(args[0]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,int))objc_msgSend)(inst, sel, a0); });
+    } else if (nargs == 1 && k0 == AKind::Block) {
+      RCTResponseSenderBlock b0 = getBlock(rt, args[0]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,id))objc_msgSend)(inst, sel, b0); });
+    } else if (nargs == 2 && k0 == AKind::Double && k1 == AKind::Double) {
+      double a0 = getNum(args[0]), a1 = getNum(args[1]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,double,double))objc_msgSend)(inst, sel, a0, a1); });
+    } else if (nargs == 2 && k0 == AKind::Object && k1 == AKind::Object) {
+      id a0 = getObj(rt, args[0]), a1 = getObj(rt, args[1]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,id,id))objc_msgSend)(inst, sel, a0, a1); });
+    } else if (nargs == 2 && k0 == AKind::Object && k1 == AKind::Block) {
+      id a0 = getObj(rt, args[0]);
+      RCTResponseSenderBlock b1 = getBlock(rt, args[1]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,id,id))objc_msgSend)(inst, sel, a0, b1); });
+    } else if (nargs == 2 && k0 == AKind::Block && k1 == AKind::Block) {
+      RCTResponseSenderBlock b0 = getBlock(rt, args[0]), b1 = getBlock(rt, args[1]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,id,id))objc_msgSend)(inst, sel, b0, b1); });
+    } else if (nargs == 2 && k0 == AKind::Object && k1 == AKind::Double) {
+      id a0 = getObj(rt, args[0]); double a1 = getNum(args[1]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,id,double))objc_msgSend)(inst, sel, a0, a1); });
+    } else if (nargs == 3 && k0 == AKind::Object && k1 == AKind::Object && k2 == AKind::Object) {
+      id a0 = getObj(rt, args[0]), a1 = getObj(rt, args[1]), a2 = getObj(rt, args[2]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,id,id,id))objc_msgSend)(inst, sel, a0, a1, a2); });
+    } else if (nargs == 3 && k0 == AKind::Object && k1 == AKind::Object && k2 == AKind::Block) {
+      id a0 = getObj(rt, args[0]), a1 = getObj(rt, args[1]);
+      RCTResponseSenderBlock b2 = getBlock(rt, args[2]);
+      dispatch_async(q, ^{ ((void(*)(id,SEL,id,id,id))objc_msgSend)(inst, sel, a0, a1, b2); });
+    } else {
+      return jsi::Value::undefined();
+    }
+    return jsi::Value::undefined();
+  }
+
+  // --- DOUBLE RETURN ---
+  if (ret == AKind::Double) {
+    double r;
+    if (nargs == 0) r = ((double(*)(id,SEL))objc_msgSend)(inst, sel);
+    else if (nargs == 1 && (AKind)info->argKinds[0] == AKind::Double)
+      r = ((double(*)(id,SEL,double))objc_msgSend)(inst, sel, getNum(args[0]));
+    else if (nargs == 2 && (AKind)info->argKinds[0] == AKind::Double && (AKind)info->argKinds[1] == AKind::Double)
+      r = ((double(*)(id,SEL,double,double))objc_msgSend)(inst, sel, getNum(args[0]), getNum(args[1]));
+    else return jsi::Value::undefined();
+    return jsi::Value(r);
+  }
+
+  // --- BOOL RETURN ---
+  if (ret == AKind::Bool) {
+    BOOL r;
+    if (nargs == 0) r = ((BOOL(*)(id,SEL))objc_msgSend)(inst, sel);
+    else if (nargs == 1 && (AKind)info->argKinds[0] == AKind::Bool)
+      r = ((BOOL(*)(id,SEL,BOOL))objc_msgSend)(inst, sel, getBool(args[0]));
+    else return jsi::Value::undefined();
+    return jsi::Value(static_cast<bool>(r));
+  }
+
+  // --- OBJECT RETURN ---
+  if (ret == AKind::Object) {
+    id r;
+    // Check if all args are primitives → NSNumber return, unwrap directly
+    bool allPrimitive = true;
+    for (unsigned int i = 0; i < nargs; i++) {
+      AKind k = (AKind)info->argKinds[i];
+      if (k != AKind::Double && k != AKind::Bool && k != AKind::Int) {
+        allPrimitive = false; break;
+      }
+    }
+
+    if (nargs == 0) r = ((id(*)(id,SEL))objc_msgSend)(inst, sel);
+    else if (nargs == 1 && (AKind)info->argKinds[0] == AKind::Double)
+      r = ((id(*)(id,SEL,double))objc_msgSend)(inst, sel, getNum(args[0]));
+    else if (nargs == 1 && (AKind)info->argKinds[0] == AKind::Bool)
+      r = ((id(*)(id,SEL,BOOL))objc_msgSend)(inst, sel, getBool(args[0]));
+    else if (nargs == 1 && (AKind)info->argKinds[0] == AKind::Object)
+      r = ((id(*)(id,SEL,id))objc_msgSend)(inst, sel, getObj(rt, args[0]));
+    else if (nargs == 2 && (AKind)info->argKinds[0] == AKind::Double && (AKind)info->argKinds[1] == AKind::Double)
+      r = ((id(*)(id,SEL,double,double))objc_msgSend)(inst, sel, getNum(args[0]), getNum(args[1]));
+    else return jsi::Value::undefined();
+
+    if (!r) return jsi::Value::null();
+    if (allPrimitive && [r isKindOfClass:[NSNumber class]])
+      return jsi::Value([r doubleValue]);
+    if ([r isKindOfClass:[NSString class]])
+      return jsi::String::createFromUtf8(rt, [(NSString *)r UTF8String]);
+    return jsi::Value::null();
+  }
+
+  // --- INT RETURN ---
+  if (ret == AKind::Int || ret == AKind::LongLong) {
+    if (nargs == 0) {
+      long long r = ((long long(*)(id,SEL))objc_msgSend)(inst, sel);
+      return jsi::Value(static_cast<double>(r));
+    }
+  }
+
+  return jsi::Value::undefined();
 }
 
 void ferrum_dispatch_free(FerrumDispatchInfo *info) {
   delete info;
 }
-
-} // extern "C"

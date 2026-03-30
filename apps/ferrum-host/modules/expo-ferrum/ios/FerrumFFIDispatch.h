@@ -1,7 +1,6 @@
-/// Ferrum FFI Dispatch — generic method invocation from HermesABIValue args
-/// using typed objc_msgSend casts resolved at registration time.
+/// Ferrum FFI Dispatch — typed objc_msgSend from runtime type encoding.
 ///
-/// At registration time: parse ObjC type encoding → resolve function pointer (once)
+/// At registration time: parse ObjC type encoding → resolve function pointer
 /// At call time: single function pointer dereference → typed objc_msgSend
 
 #pragma once
@@ -12,48 +11,34 @@
 
 #ifdef __cplusplus
 
-struct HermesABIValue;
-struct HermesABIValueOrError;
-struct HermesABIRuntime;
-struct HermesABIRuntimeVTable;
-struct FerrumDispatchInfo;
+#include <jsi/jsi.h>
 
-/// Resolved call function — one per type pattern, resolved at registration time.
-typedef HermesABIValueOrError (*FerrumCallFn)(
-    const FerrumDispatchInfo *info,
-    HermesABIRuntime *abiRt,
-    const HermesABIRuntimeVTable *vt,
-    const HermesABIValue *args,
-    size_t count);
-
-/// Dispatch info — all fields needed at call time, designed to be inlined
-/// into the C ABI host function context (single allocation, no pointer chasing).
+/// Dispatch info — resolved at registration time, one per method.
 struct FerrumDispatchInfo {
   id instance;
   SEL selector;
   dispatch_queue_t methodQueue;
-  FerrumCallFn callFn;
+  // Resolved call function stored as opaque pointer (type varies by path)
+  void *callFn;
+  // Arg kinds for JSI dispatch
+  unsigned int argCount;
+  int argKinds[4]; // AKind values, max 4 args
+  int retKind;
 };
 
-extern "C" {
-
+/// Build dispatch info from ObjC method. Returns NULL if unsupported.
 FerrumDispatchInfo *ferrum_dispatch_build(id instance, SEL selector, unsigned int expectedArgs);
 
-HermesABIValueOrError ferrum_dispatch_call(
+/// Call via JSI args — typed objc_msgSend, no NSInvocation.
+facebook::jsi::Value ferrum_dispatch_call_jsi(
     const FerrumDispatchInfo *info,
-    HermesABIRuntime *abiRt,
-    const HermesABIRuntimeVTable *vt,
-    const HermesABIValue *args,
+    facebook::jsi::Runtime &rt,
+    const facebook::jsi::Value *args,
     size_t count);
 
 void ferrum_dispatch_free(FerrumDispatchInfo *info);
 
-/// Set global state needed for block/callback wrapping.
-void ferrum_dispatch_set_globals(
-    HermesABIRuntime *rt,
-    const HermesABIRuntimeVTable *vt,
-    void *invokerPtr);
-
-} // extern "C"
+/// Set CallInvoker for async callback dispatch.
+void ferrum_dispatch_set_globals(void *invokerPtr);
 
 #endif // __cplusplus
