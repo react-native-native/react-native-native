@@ -1,16 +1,21 @@
 package expo.modules.ferrum
 
+import android.os.Handler
+import android.os.HandlerThread
 import com.facebook.proguard.annotations.DoNotStrip
-import com.facebook.react.ReactApplication
 import com.facebook.react.runtime.ReactHostImpl
 
 /**
- * Provides Java TurboModule instances to the C++ Ferrum layer.
- * Uses the ReactHost's TurboModuleManager to look up modules by name.
+ * Provides Java TurboModule instances and a native worker thread to the C++ Ferrum layer.
  */
 @DoNotStrip
 object FerrumModuleProvider {
     private var reactHost: ReactHostImpl? = null
+
+    // Dedicated worker thread for async void method dispatch.
+    // Serial, ordered — same semantics as RN's nativeMethodCallInvoker.
+    private val workerThread = HandlerThread("FerrumNativeWorker").apply { start() }
+    private val workerHandler = Handler(workerThread.looper)
 
     fun setReactHost(host: ReactHostImpl) {
         reactHost = host
@@ -20,22 +25,16 @@ object FerrumModuleProvider {
     @DoNotStrip
     fun getModuleInstance(moduleName: String): Any? {
         try {
-            val host = reactHost
-            if (host == null) {
-                android.util.Log.w("Ferrum", "getModuleInstance($moduleName): reactHost is null")
-                return null
-            }
-            val context = host.currentReactContext
-            if (context == null) {
-                android.util.Log.w("Ferrum", "getModuleInstance($moduleName): reactContext is null")
-                return null
-            }
-            val module = context.getNativeModule(moduleName)
-            android.util.Log.i("Ferrum", "getModuleInstance($moduleName): ${module?.javaClass?.name ?: "null"}")
-            return module
+            val context = reactHost?.currentReactContext ?: return null
+            return context.getNativeModule(moduleName)
         } catch (e: Exception) {
-            android.util.Log.e("Ferrum", "getModuleInstance($moduleName): ${e.message}")
             return null
         }
+    }
+
+    @JvmStatic
+    @DoNotStrip
+    fun postToWorker(runnable: Runnable) {
+        workerHandler.post(runnable)
     }
 }
