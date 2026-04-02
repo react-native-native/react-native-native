@@ -1,0 +1,538 @@
+/**
+ * static-compiler.js — Production build: generates bridges, compiles Rust into
+ * a single static library, and writes a podspec/Gradle config.
+ *
+ * All output goes to .ferrum/generated/:
+ *   - ReactNativeNativeUserCode.podspec
+ *   - bridges/ios/*.cpp, *.mm, *.c
+ *   - bridges/android/*.cpp, *.c
+ *   - release/libferrum_user.a  (single unified Rust lib)
+ *   - kotlin-src/*.kt
+ *
+ * Invoked by:
+ *   - CocoaPods script phase (iOS): node ferrum/static-compiler.js --platform ios
+ *   - Gradle pre-build task (Android): node ferrum/static-compiler.js --platform android
+ */
+
+const path = require('path');
+const fs = require('fs');
+const { execSync } = require('child_process');
+
+// Reuse existing extractors
+const { extractCppExports, isCppComponent, extractCppComponentProps } = require('./cpp-ast-extractor');
+const { extractRustExports } = require('./rust-extractor');
+const { extractSwiftExports } = require('./swift-compiler');
+const { extractKotlinExports } = require('./kotlin-extractor');
+
+// Reuse existing bridge generators
+const { generateBridge } = require('./dylib-compiler');
+
+// ─── CLI ───────────────────────────────────────────────────────────────
+
+const args = process.argv.slice(2);
+const platformIdx = args.indexOf('--platform');
+const platform = platformIdx >= 0 ? args[platformIdx + 1] : 'ios';
+const projectRoot = args.includes('--root')
+  ? args[args.indexOf('--root') + 1]
+  : path.resolve(__dirname, '..');
+
+const isIOS = platform === 'ios';
+const isAndroid = platform === 'android';
+
+const genDir = path.join(projectRoot, '.ferrum/generated');
+const bridgeDir = path.join(genDir, 'bridges', isAndroid ? 'android' : 'ios');
+const releaseDir = path.join(genDir, 'release');
+fs.mkdirSync(bridgeDir, { recursive: true });
+fs.mkdirSync(releaseDir, { recursive: true });
+
+console.log(`[ferrum] Static compiler: platform=${platform}, root=${projectRoot}`);
+
+// ─── Scan for user native files ────────────────────────────────────────
+
+function findUserFiles(exts) {
+  const results = [];
+  const ignore = ['node_modules', '.ferrum', 'modules', 'ios', 'android', 'vendor'];
+
+  function walk(dir) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (ignore.includes(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (exts.some(ext => entry.name.endsWith(ext))) {
+        results.push(full);
+      }
+    }
+  }
+  walk(projectRoot);
+  return results;
+}
+
+// ─── C++/ObjC++ bridge generation ──────────────────────────────────────
+// Bridges are source files compiled by Xcode/Gradle alongside user code.
+
+function buildCppBridges() {
+  // .mm (ObjC++) is iOS-only, .cpp/.cc work on both platforms
+  const exts = isIOS ? ['.cpp', '.cc', '.mm'] : ['.cpp', '.cc'];
+  const cppFiles = findUserFiles(exts);
+  if (cppFiles.length === 0) return;
+
+  for (const filepath of cppFiles) {
+    if (isCppComponent(filepath)) {
+      const baseName = path.basename(filepath).replace(/\.(cpp|cc|mm)$/, '').toLowerCase();
+      const componentId = `ferrum.${baseName}`;
+      const cppProps = extractCppComponentProps(filepath);
+      const propsTypeName = (() => {
+        const src = fs.readFileSync(filepath, 'utf8');
+        const m = src.match(/RNA_COMPONENT\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
+        return m ? m[2] : null;
+      })();
+
+      const propExtractions = (cppProps || []).map(p => {
+        if (p.cppType === 'std::string') return `  props.${p.name} = _rna_get_string(rt, obj, "${p.jsName}", props.${p.name});`;
+        if (['double', 'float', 'int'].includes(p.cppType)) return `  props.${p.name} = _rna_get_number(rt, obj, "${p.jsName}", props.${p.name});`;
+        if (p.cppType === 'bool') return `  props.${p.name} = _rna_get_bool(rt, obj, "${p.jsName}", props.${p.name});`;
+        return '';
+      }).join('\n');
+
+      const renderFnName = `ferrum_${baseName}_render`;
+      const bridgeSrc = `
+// Auto-generated production component bridge for ${baseName}
+#include "${path.resolve(filepath)}"
+
+extern "C"
+void ${renderFnName}(void* view, float width, float height,
+                   void* jsi_runtime, void* jsi_props) {
+  void* rt = jsi_runtime;
+  void* obj = jsi_props;
+${propsTypeName ? `  ${propsTypeName} props;\n${propExtractions}\n  mount(view, width, height, props);` : '  mount(view, width, height);'}
+}
+
+extern "C" {
+  typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
+  void ferrum_register_render(const char*, FerrumRenderFn);
+}
+
+__attribute__((constructor, used))
+static void register_${baseName}() {
+  ferrum_register_render("${componentId}", ${renderFnName});
+}
+`;
+      const ext = filepath.endsWith('.mm') ? 'mm' : 'cpp';
+      fs.writeFileSync(path.join(bridgeDir, `ferrum_${baseName}_bridge.${ext}`), bridgeSrc);
+      console.log(`[ferrum] Bridge: ${baseName} (component)`);
+    } else {
+      const exports = extractCppExports(filepath, []);
+      if (exports.length === 0) continue;
+
+      const rel = path.relative(projectRoot, filepath);
+      const moduleId = rel.replace(/\.(cpp|cc|mm)$/, '').replace(/[\/\\]/g, '_').replace(/[^a-zA-Z0-9_]/g, '_');
+      // Include user source in the bridge so functions are compiled in the same
+      // translation unit. In dev mode, -undefined dynamic_lookup resolves them;
+      // in production static linking, they must be compiled directly.
+      const bridgeSrc = generateBridge(exports, moduleId);
+      const userInclude = `#include "${path.resolve(filepath)}"\n\n`;
+      const ext = filepath.endsWith('.mm') ? 'mm' : 'cpp';
+      fs.writeFileSync(path.join(bridgeDir, `${moduleId}_bridge.${ext}`), userInclude + bridgeSrc);
+      console.log(`[ferrum] Bridge: ${moduleId} (${exports.length} functions)`);
+    }
+  }
+}
+
+// ─── Rust: single unified static library ───────────────────────────────
+// All user .rs files are compiled into ONE .a to avoid duplicate stdlib symbols.
+
+function buildRustStatic() {
+  const rsFiles = findUserFiles(['.rs']);
+  if (rsFiles.length === 0) return;
+
+  const libName = isAndroid ? 'libferrum_user_android.a' : 'libferrum_user.a';
+  const outputLib = path.join(releaseDir, libName);
+
+  // If pre-compiled .a exists and is newer than all source files, skip
+  if (fs.existsSync(outputLib)) {
+    const libMtime = fs.statSync(outputLib).mtimeMs;
+    const allNewer = rsFiles.every(f => fs.statSync(f).mtimeMs < libMtime);
+    if (allNewer) {
+      console.log(`[ferrum] Rust: libferrum_user.a up to date, skipping`);
+      return;
+    }
+  }
+
+  // Unified crate: all user .rs files compiled as modules in a single crate.
+  // Shared types (NativeViewHandle, NativeView) come from rna-core via crate root.
+  // No duplicate stdlib — one .a file.
+  const { generateFunctionWrapper, generateComponentWrapper } = require('./rust-compiler');
+  const { extractRustExports: _extractRust } = require('./rust-extractor');
+
+  const unifiedDir = path.join(projectRoot, '.ferrum/build/ferrum_unified');
+  fs.mkdirSync(path.join(unifiedDir, 'src'), { recursive: true });
+
+  // Forward deps from root Cargo.toml, enabling "unified" feature on rna-core
+  let rootDeps = '';
+  try {
+    const rootToml = fs.readFileSync(path.join(projectRoot, 'Cargo.toml'), 'utf8');
+    const depsSection = rootToml.match(/\[dependencies\]([\s\S]*?)(?:\n\[|\n*$)/);
+    if (depsSection) {
+      rootDeps = depsSection[1]
+        .replace(/path\s*=\s*"([^"]+)"/g, (_, p) => {
+          const absPath = path.resolve(projectRoot, p);
+          const relPath = path.relative(unifiedDir, absPath);
+          return `path = "${relPath}"`;
+        });
+    }
+  } catch {}
+
+  fs.writeFileSync(path.join(unifiedDir, 'Cargo.toml'), `[package]
+name = "ferrum-user"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[workspace]
+
+[dependencies]
+${rootDeps}
+
+[profile.release]
+opt-level = "z"
+lto = true
+`);
+
+  // Generate each user file as a module with unified = true (imports from crate root)
+  const modules = [];
+  for (const filepath of rsFiles) {
+    const { functions, isComponent } = _extractRust(filepath);
+    if (!isComponent && functions.length === 0) continue;
+
+    const name = path.basename(filepath, '.rs').toLowerCase();
+    const userSrc = fs.readFileSync(filepath, 'utf8');
+
+    let moduleSrc;
+    if (isComponent) {
+      moduleSrc = generateComponentWrapper(userSrc, name, { unified: true });
+    } else {
+      moduleSrc = generateFunctionWrapper(userSrc, functions, name, { unified: true });
+    }
+    fs.writeFileSync(path.join(unifiedDir, 'src', `${name}.rs`), moduleSrc);
+    modules.push(name);
+  }
+
+  if (modules.length === 0) {
+    console.log('[ferrum] Rust: no exported modules found');
+    return;
+  }
+
+  // lib.rs: re-export shared types from rna-core, declare user modules
+  const libRs = [
+    '// Auto-generated by React Native Native — do not edit',
+    '#![allow(unused, non_snake_case, unused_unsafe)]',
+    '',
+    '// Canonical shared types — all modules import from here via use crate::',
+    'pub use rna_core::prelude::*;',
+    '',
+    '// User component/function modules',
+    ...modules.map(m => `pub mod ${m};`),
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(unifiedDir, 'src/lib.rs'), libRs);
+
+  // Build
+  const sharedTarget = path.join(projectRoot, '.ferrum/cargo-target');
+  const target = isIOS ? 'aarch64-apple-ios' : 'aarch64-linux-android';
+
+  const cmd = [
+    'cargo', 'build', '--release',
+    '--manifest-path', path.join(unifiedDir, 'Cargo.toml'),
+    `--target=${target}`,
+    '--lib',
+  ];
+
+  const env = { ...process.env, CARGO_TARGET_DIR: sharedTarget };
+  if (isIOS) {
+    env.RUSTFLAGS = '--cfg unified -C link-arg=-undefined -C link-arg=dynamic_lookup';
+  }
+  if (isAndroid) {
+    const androidHome = process.env.ANDROID_HOME || path.join(process.env.HOME, 'Library/Android/sdk');
+    const ndkDir = path.join(androidHome, 'ndk');
+    try {
+      const versions = fs.readdirSync(ndkDir).sort();
+      if (versions.length > 0) {
+        const toolchain = path.join(ndkDir, versions[versions.length - 1], 'toolchains/llvm/prebuilt');
+        const hosts = fs.readdirSync(toolchain);
+        if (hosts.length > 0) {
+          env.CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER =
+            path.join(toolchain, hosts[0], 'bin/aarch64-linux-android24-clang');
+        }
+      }
+    } catch {}
+    env.RUSTFLAGS = '--cfg unified -C link-arg=-llog';
+  }
+
+  console.log(`[ferrum] Compiling unified Rust crate (${modules.length} modules, ${target})...`);
+  try {
+    execSync(cmd.join(' '), { stdio: 'pipe', encoding: 'utf8', env });
+  } catch (err) {
+    console.error(`[ferrum] Rust compile failed`);
+    console.error((err.stderr || '').slice(0, 3000));
+    return;
+  }
+
+  const builtLib = path.join(sharedTarget, target, 'release/libferrum_user.a');
+  if (fs.existsSync(builtLib)) {
+    fs.copyFileSync(builtLib, outputLib);
+    const size = fs.statSync(outputLib).size;
+    console.log(`[ferrum] Built libferrum_user.a (${(size / 1024).toFixed(1)}KB)`);
+  } else {
+    console.error(`[ferrum] libferrum_user.a not found at ${builtLib}`);
+  }
+}
+
+// ─── Swift bridge generation ───────────────────────────────────────────
+
+function buildSwiftBridges() {
+  if (!isIOS) return;
+  const swiftFiles = findUserFiles(['.swift']);
+  if (swiftFiles.length === 0) return;
+
+  for (const filepath of swiftFiles) {
+    const name = path.basename(filepath, '.swift');
+    const moduleId = name.toLowerCase();
+    const src = fs.readFileSync(filepath, 'utf8');
+    const isComp = src.includes('@rna_component') || src.includes('ferrum::component');
+
+    if (isComp) {
+      const renderFnName = `ferrum_${moduleId}_render`;
+      fs.writeFileSync(path.join(bridgeDir, `${moduleId}_reg.c`), `
+typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
+extern void ferrum_register_render(const char*, FerrumRenderFn);
+extern void ${renderFnName}(void*, float, float, void*, void*);
+
+__attribute__((constructor, used))
+void rna_register_${moduleId}(void) {
+  ferrum_register_render("ferrum.${moduleId}", ${renderFnName});
+}
+`);
+      console.log(`[ferrum] Swift bridge: ${moduleId} (component)`);
+    } else {
+      const exports = extractSwiftExports(filepath);
+      if (exports.length === 0) continue;
+
+      const declarations = exports.map(fn =>
+        `extern const char* rna_swift_${moduleId}_${fn.name}(const char*);`
+      ).join('\n');
+      const registrations = exports.map(fn =>
+        `  rna_register_sync("${moduleId}", "${fn.name}", rna_swift_${moduleId}_${fn.name});`
+      ).join('\n');
+
+      fs.writeFileSync(path.join(bridgeDir, `${moduleId}_reg.c`), `
+typedef const char* (*RNASyncFn)(const char*);
+extern void rna_register_sync(const char*, const char*, RNASyncFn);
+${declarations}
+
+__attribute__((constructor, used))
+void rna_register_${moduleId}(void) {
+${registrations}
+}
+`);
+      // Generate Swift @_cdecl wrappers that the C registration file references
+      let swiftWrappers = 'import Foundation\n';
+      swiftWrappers += exports.map(fn => {
+        const retType = fn.ret || 'Void';
+        const argPassthrough = fn.args.map(a => a.name).join(', ');
+        let resultExpr;
+        if (retType === 'String') resultExpr = `return UnsafePointer(strdup("\\"" + result + "\\"")!)`;
+        else if (retType === 'Bool') resultExpr = `return UnsafePointer(strdup(result ? "true" : "false")!)`;
+        else if (retType === 'Void') resultExpr = `return UnsafePointer(strdup("null")!)`;
+        else resultExpr = `return UnsafePointer(strdup(String(result))!)`;
+        return `
+@_cdecl("${fn.cdeclName}")
+func _rna_${fn.name}(_ argsJson: UnsafePointer<CChar>) -> UnsafePointer<CChar> {
+    let result = ${fn.name}(${argPassthrough})
+    ${resultExpr}
+}`;
+      }).join('\n');
+      fs.writeFileSync(path.join(bridgeDir, `${moduleId}_bridge.swift`), swiftWrappers);
+
+      console.log(`[ferrum] Swift bridge: ${moduleId} (${exports.length} functions)`);
+    }
+  }
+}
+
+// ─── Kotlin wrapper generation (Android only) ──────────────────────────
+
+function buildKotlinSources() {
+  if (!isAndroid) return [];
+  const ktFiles = findUserFiles(['.kt']);
+  if (ktFiles.length === 0) return [];
+
+  const ktSrcDir = path.join(genDir, 'kotlin-src/com/ferrumfabric/generated');
+  fs.mkdirSync(ktSrcDir, { recursive: true });
+  const registeredModules = [];
+
+  for (const filepath of ktFiles) {
+    const { functions, isComponent } = extractKotlinExports(filepath);
+    const baseName = path.basename(filepath, '.kt');
+    const moduleId = baseName.toLowerCase();
+    const className = `RnaModule_${moduleId}`;
+    const userSrc = fs.readFileSync(filepath, 'utf8');
+
+    if (isComponent) {
+      const cleanSrc = userSrc
+        .replace(/\/\/\s*@rna_component\s*\n/g, '')
+        .replace(/^package\s+[^\n]+\n/m, '')
+        .replace(/^import\s+[^\n]+\n/gm, '');
+      const userImports = [...userSrc.matchAll(/^(import\s+[^\n]+)\n/gm)].map(m => m[1]);
+      const isCompose = userSrc.includes('@Composable');
+
+      if (isCompose) {
+        // Compose: Gradle compiles with real Compose plugin (no pre-transform supplement)
+        // Parse Composable function params for prop extraction
+        const compFnMatch = cleanSrc.match(/@Composable\s+fun\s+(\w+)\s*\(([^)]*)\)/);
+        const compFnName = compFnMatch ? compFnMatch[1] : baseName;
+        const compParams = compFnMatch && compFnMatch[2] ? compFnMatch[2].trim() : '';
+
+        let compCall;
+        if (compParams) {
+          const args = compParams.split(',').map(p => p.trim()).filter(Boolean);
+          const argExprs = args.map(p => {
+            const m = p.match(/(\w+)\s*:\s*(.+)/);
+            if (!m) return null;
+            const [, pName, pType] = m;
+            const t = pType.trim();
+            if (t === 'String') return `                ${pName} = props["${pName}"] as? String ?: ""`;
+            if (t === 'Int') return `                ${pName} = (props["${pName}"] as? Number)?.toInt() ?: 0`;
+            if (t === 'Float' || t === 'Double') return `                ${pName} = (props["${pName}"] as? Number)?.toDouble() ?: 0.0`;
+            if (t === 'Boolean') return `                ${pName} = props["${pName}"] as? Boolean ?: false`;
+            if (t.includes('->')) return `                ${pName} = {}`;
+            return `                ${pName} = props["${pName}"]`;
+          }).filter(Boolean);
+          compCall = `            ${compFnName}(\n${argExprs.join(',\n')}\n            )`;
+        } else {
+          compCall = `            ${compFnName}()`;
+        }
+
+        const wrapper = [
+          `package com.ferrumfabric.generated`,
+          '', 'import android.view.ViewGroup', 'import android.widget.FrameLayout',
+          'import androidx.compose.runtime.*', 'import androidx.compose.ui.platform.ComposeView',
+          ...userImports, '', cleanSrc, '',
+          `object ${className} {`, '    @JvmStatic',
+          '    fun render(parent: ViewGroup, props: Map<String, Any?>) {',
+          '        val composeView = ComposeView(parent.context)',
+          '        composeView.setContent {',
+          compCall,
+          '        }',
+          '        parent.addView(composeView, FrameLayout.LayoutParams(',
+          '            FrameLayout.LayoutParams.MATCH_PARENT,',
+          '            FrameLayout.LayoutParams.MATCH_PARENT))', '    }', '}',
+        ].join('\n');
+        fs.writeFileSync(path.join(ktSrcDir, `${className}.kt`), wrapper);
+      } else {
+        const fnMatch = cleanSrc.match(/fun\s+(\w+)\s*\(\s*parent\s*:/);
+        const fnName = fnMatch ? fnMatch[1] : baseName;
+        const wrapper = [
+          `package com.ferrumfabric.generated`, '', ...userImports, '', cleanSrc, '',
+          `object ${className} {`, '    @JvmStatic',
+          '    fun render(parent: android.view.ViewGroup, props: Map<String, Any?>) {',
+          `        ${fnName}(parent, props)`, '    }', '}',
+        ].join('\n');
+        fs.writeFileSync(path.join(ktSrcDir, `${className}.kt`), wrapper);
+      }
+      registeredModules.push(moduleId);
+      console.log(`[ferrum] Kotlin wrapper: ${moduleId} (component)`);
+
+    } else if (functions.length > 0) {
+      const cleanSrc = userSrc
+        .replace(/\/\/\s*@rna_export\s*\([^)]*\)\s*\n/g, '')
+        .replace(/^package\s+[^\n]+\n/m, '');
+
+      const lines = [
+        `package com.ferrumfabric.generated`, '', cleanSrc, '',
+        `private fun _parseArgs(json: String): List<String> {`,
+        `    val s = json.trim().removePrefix("[").removeSuffix("]")`,
+        `    if (s.isBlank()) return emptyList()`,
+        `    val result = mutableListOf<String>()`,
+        `    var i = 0; var inStr = false; var esc = false; val buf = StringBuilder()`,
+        `    while (i < s.length) { val c = s[i]; when {`,
+        `        esc -> { buf.append(c); esc = false }; c == '\\\\' -> esc = true`,
+        `        c == '"' -> inStr = !inStr; c == ',' && !inStr -> { result.add(buf.toString().trim()); buf.clear() }`,
+        `        else -> buf.append(c) }; i++ }`,
+        `    if (buf.isNotEmpty()) result.add(buf.toString().trim()); return result }`,
+        '',
+        `object ${className} {`, '    @JvmStatic',
+        '    fun dispatch(fnName: String, argsJson: String): String {',
+        '        val args = _parseArgs(argsJson)', '        return when (fnName) {',
+      ];
+      for (const fn of functions) {
+        const argExprs = fn.args.map((a, i) => {
+          switch (a.type) {
+            case 'Int': return `args[${i}].toInt()`;
+            case 'Long': return `args[${i}].toLong()`;
+            case 'Float': return `args[${i}].toFloat()`;
+            case 'Double': return `args[${i}].toDouble()`;
+            case 'Boolean': return `args[${i}].toBoolean()`;
+            default: return `args[${i}]`;
+          }
+        });
+        const call = `${fn.name}(${argExprs.join(', ')})`;
+        if (fn.ret === 'String') lines.push(`            "${fn.name}" -> "\\"" + ${call} + "\\""`)
+        else if (fn.ret === 'Unit') lines.push(`            "${fn.name}" -> { ${call}; "null" }`)
+        else lines.push(`            "${fn.name}" -> ${call}.toString()`)
+      }
+      lines.push('            else -> "null"', '        }', '    }', '}');
+      fs.writeFileSync(path.join(ktSrcDir, `${className}.kt`), lines.join('\n'));
+      registeredModules.push(moduleId);
+      console.log(`[ferrum] Kotlin wrapper: ${moduleId} (${functions.length} functions)`);
+    }
+  }
+  return registeredModules;
+}
+
+// ─── Run ───────────────────────────────────────────────────────────────
+
+const t0 = Date.now();
+buildCppBridges();
+buildRustStatic();
+buildSwiftBridges();
+const kotlinModules = buildKotlinSources();
+
+// Generate Kotlin registry class that registers all modules at init time.
+// This is compiled by Gradle and auto-registers when the class is loaded.
+if (kotlinModules && kotlinModules.length > 0) {
+  const ktSrcDir = path.join(genDir, 'kotlin-src/com/ferrumfabric/generated');
+  const registrations = kotlinModules.map(moduleId => {
+    const className = `RnaModule_${moduleId}`;
+    return `        try {
+            val clazz = Class.forName("com.ferrumfabric.generated.${className}")
+            try {
+                val dispatch = clazz.getMethod("dispatch", String::class.java, String::class.java)
+                com.ferrumfabric.FerrumRuntime.registerKotlinDispatch("${moduleId}", dispatch)
+            } catch (_: NoSuchMethodException) {}
+            try {
+                val render = clazz.getMethod("render", android.view.ViewGroup::class.java, Map::class.java)
+                com.ferrumfabric.FerrumRuntime.registerKotlinRenderer("ferrum.${moduleId}", render)
+            } catch (_: NoSuchMethodException) {}
+        } catch (e: Exception) {
+            android.util.Log.w("FerrumRegistry", "Module ${moduleId}: \${e.message}")
+        }`;
+  }).join('\n');
+
+  fs.writeFileSync(path.join(ktSrcDir, 'FerrumModuleRegistry.kt'), `package com.ferrumfabric.generated
+
+object FerrumModuleRegistry {
+    init {
+${registrations}
+    }
+
+    fun ensure() {} // Called to trigger class loading
+}
+`);
+  console.log(`[ferrum] Kotlin registry: ${kotlinModules.length} modules`);
+}
+
+console.log(`[ferrum] Static compilation done in ${Date.now() - t0}ms`);
