@@ -16,18 +16,19 @@ const { compileRustDylib } = require('./compilers/rust-compiler');
 const { compileAndroidCppDylib, compileAndroidCppComponentDylib, compileAndroidRustDylib } = require('./compilers/android-compiler');
 const { compileKotlinDex, extractKotlinExports } = require('./compilers/kotlin-compiler');
 
-// Resolve the default Expo transformer once
-const upstreamTransformerPath = (() => {
-  try {
-    const mc = require('expo/metro-config');
-    const cfg = mc.getDefaultConfig(__dirname);
-    return cfg.transformer?.babelTransformerPath;
-  } catch {
-    return require.resolve('@expo/metro-config/babel-transformer');
-  }
-})();
-
-const upstreamTransformer = require(upstreamTransformerPath);
+// Resolve the default Expo transformer. Since this file lives in the package
+// (not the app), we resolve from process.cwd() which is the app root.
+let upstreamTransformer;
+try {
+  const mc = require(require.resolve('expo/metro-config', { paths: [process.cwd()] }));
+  const cfg = mc.getDefaultConfig(process.cwd());
+  upstreamTransformer = require(cfg.transformer.babelTransformerPath);
+} catch {
+  upstreamTransformer = require(require.resolve(
+    '@expo/metro-config/babel-transformer',
+    { paths: [process.cwd()] }
+  ));
+}
 
 // Cached per Metro session
 let _includePaths = null;
