@@ -117,7 +117,7 @@ function resolveOnce(projectRoot) {
     }
   } catch {}
 
-  // Find d8 from build-tools
+  // Find d8 from build-tools, fall back to local cache
   const btDir = path.join(androidHome, 'build-tools');
   if (fs.existsSync(btDir)) {
     const versions = fs.readdirSync(btDir).sort();
@@ -126,8 +126,12 @@ function resolveOnce(projectRoot) {
       if (fs.existsSync(d8)) _d8Path = d8;
     }
   }
+  if (!_d8Path && projectRoot) {
+    const localD8 = path.join(projectRoot, '.ferrum/kotlin-cache/d8.jar');
+    if (fs.existsSync(localD8)) _d8Path = `java -jar "${localD8}"`;
+  }
 
-  // Find android.jar for compilation classpath
+  // Find android.jar for compilation classpath, fall back to local cache
   const platformsDir = path.join(androidHome, 'platforms');
   if (fs.existsSync(platformsDir)) {
     const platforms = fs.readdirSync(platformsDir).sort();
@@ -135,6 +139,10 @@ function resolveOnce(projectRoot) {
       const jar = path.join(platformsDir, platforms[platforms.length - 1], 'android.jar');
       if (fs.existsSync(jar)) _androidJar = jar;
     }
+  }
+  if (!_androidJar && projectRoot) {
+    const localJar = path.join(projectRoot, '.ferrum/kotlin-cache/android.jar');
+    if (fs.existsSync(localJar)) _androidJar = localJar;
   }
 
   // Find Compose compiler plugin (original, non-instrumented) + full compiler

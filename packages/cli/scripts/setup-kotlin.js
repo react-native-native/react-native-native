@@ -108,23 +108,92 @@ async function main() {
     }
   }
 
-  // Also need d8 from Android SDK for .dex conversion
+  // ── android.jar (API stubs for type resolution) ──────────────────────
   const androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT
     || path.join(process.env.HOME || '', 'Library/Android/sdk');
+  const platformsDir = path.join(androidHome, 'platforms');
+  let hasAndroidJar = false;
+
+  if (fs.existsSync(platformsDir)) {
+    const platforms = fs.readdirSync(platformsDir).sort();
+    if (platforms.length > 0) {
+      const jar = path.join(platformsDir, platforms[platforms.length - 1], 'android.jar');
+      if (fs.existsSync(jar)) {
+        console.log(`✓ android.jar (${platforms[platforms.length - 1]})`);
+        hasAndroidJar = true;
+      }
+    }
+  }
+
+  if (!hasAndroidJar) {
+    // Download a minimal android.jar from Google's Maven
+    const localDir = path.join(process.cwd(), '.ferrum/kotlin-cache');
+    const androidJarDest = path.join(localDir, 'android.jar');
+    if (fs.existsSync(androidJarDest)) {
+      console.log(`✓ android.jar (in local cache)`);
+    } else {
+      console.log('  Android SDK not found — downloading android.jar...');
+      // android.jar from the SDK's platforms dir. Google hosts them at dl.google.com.
+      // We use the android-34 platform as a stable baseline.
+      const androidJarUrl = 'https://dl.google.com/android/repository/platform-34_r03.zip';
+      const zipDest = path.join(localDir, 'platform-34.zip');
+      try {
+        await download(androidJarUrl, zipDest);
+        // Extract just android.jar from the zip
+        const { execSync } = require('child_process');
+        execSync(`unzip -o -q "${zipDest}" "android-34/android.jar" -d "${localDir}" 2>/dev/null`, { stdio: 'pipe' });
+        const extracted = path.join(localDir, 'android-34/android.jar');
+        if (fs.existsSync(extracted)) {
+          fs.renameSync(extracted, androidJarDest);
+          try { fs.rmdirSync(path.join(localDir, 'android-34')); } catch {}
+        }
+        try { fs.unlinkSync(zipDest); } catch {}
+        if (fs.existsSync(androidJarDest)) {
+          const size = fs.statSync(androidJarDest).size;
+          console.log(`✓ android.jar (${(size / 1024 / 1024).toFixed(1)}MB, downloaded)`);
+        }
+      } catch (e) {
+        console.warn(`⚠ Failed to download android.jar: ${e.message}`);
+        console.warn('  Install Android Studio or set $ANDROID_HOME');
+      }
+    }
+  }
+
+  // ── d8 (.class → .dex conversion) ───────────────────────────────────
   const btDir = path.join(androidHome, 'build-tools');
+  let hasD8 = false;
+
   if (fs.existsSync(btDir)) {
     const versions = fs.readdirSync(btDir).sort();
     if (versions.length > 0) {
       console.log(`✓ d8 (Android build-tools ${versions[versions.length - 1]})`);
+      hasD8 = true;
     }
-  } else {
-    console.warn('⚠ Android SDK build-tools not found. Install via Android Studio.');
+  }
+
+  if (!hasD8) {
+    // Download d8 (R8) from Maven — it's a standalone JAR
+    const localDir = path.join(process.cwd(), '.ferrum/kotlin-cache');
+    const d8Dest = path.join(localDir, 'd8.jar');
+    if (fs.existsSync(d8Dest)) {
+      console.log(`✓ d8 (in local cache)`);
+    } else {
+      const R8_VERSION = '8.5.35';
+      const d8Url = `${MAVEN}/com/android/tools/r8/${R8_VERSION}/r8-${R8_VERSION}.jar`;
+      try {
+        await download(d8Url, d8Dest);
+        const size = fs.statSync(d8Dest).size;
+        console.log(`✓ d8/r8 (${(size / 1024 / 1024).toFixed(1)}MB, downloaded)`);
+      } catch (e) {
+        console.warn(`⚠ Failed to download d8: ${e.message}`);
+        console.warn('  Install Android Studio or set $ANDROID_HOME');
+      }
+    }
   }
 
   console.log('\nDone. Kotlin hot-reload is ready.');
-  if (!allFound) {
-    console.log('Note: JARs were cached locally in .ferrum/kotlin-cache/');
-    console.log('They will also be cached in Gradle after your first Android build.');
+  if (!allFound || !hasAndroidJar || !hasD8) {
+    console.log('Note: Missing tools were cached in .ferrum/kotlin-cache/');
   }
 }
 
