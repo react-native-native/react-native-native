@@ -490,11 +490,10 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
       } catch {}
     }
 
-    // ferrum-fabric compiled classes (for ComposeHost, FerrumRuntime, etc.)
+    // ComposeHost JAR (built by setup-compose, no Gradle build needed)
     if (projectRoot) {
-      const ferrumClasses = path.join(projectRoot,
-        'node_modules/@react-native-native/nativ-fabric/android/build/tmp/kotlin-classes/debug');
-      if (fs.existsSync(ferrumClasses)) cp.push(ferrumClasses);
+      const hostJar = path.join(projectRoot, '.ferrum/compose-pretransform/compose-host.jar');
+      if (fs.existsSync(hostJar)) cp.push(hostJar);
     }
   }
 

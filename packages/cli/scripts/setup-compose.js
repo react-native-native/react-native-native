@@ -309,6 +309,80 @@ fun Spacer(modifier: Modifier = Modifier) = androidx.compose.foundation.layout.S
   }
 }
 
+// ─── Step 6: ComposeHost JAR ───────────────────────────────────────────
+
+function setupComposeHostJar() {
+  const hostJar = path.join(outDir, 'compose-host.jar');
+  if (fs.existsSync(hostJar)) {
+    console.log(`✓ compose-host.jar (already exists)`);
+    return;
+  }
+
+  // ComposeHost wraps ComposeView.setContent for hot-reloaded .dex components.
+  // Previously required a full Gradle build — now compiled standalone.
+  const srcDir = path.join(outDir, 'host-src');
+  fs.mkdirSync(srcDir, { recursive: true });
+
+  fs.writeFileSync(path.join(srcDir, 'ComposeHost.kt'), `
+package com.ferrumfabric
+
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.ComposeView
+
+object ComposeHost {
+    @JvmStatic
+    fun setContent(parent: ViewGroup, content: @Composable () -> Unit) {
+        val composeView = ComposeView(parent.context)
+        composeView.setContent { content() }
+        parent.addView(composeView, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT))
+    }
+}
+`);
+
+  const plugin = setupComposePlugin();
+  const fullCompiler = path.join(outDir, `kotlin-compiler-${KOTLIN_VERSION}.jar`);
+  const kotlinStdlib = findInGradleCache('org.jetbrains.kotlin', 'kotlin-stdlib');
+
+  if (!plugin || !fs.existsSync(fullCompiler) || !kotlinStdlib) {
+    console.warn('⚠ Cannot build compose-host.jar — missing deps');
+    return;
+  }
+
+  const cp = [kotlinStdlib];
+  try {
+    const jars = fs.readdirSync(composeJarsDir).filter(f => f.endsWith('.jar')).map(f => path.join(composeJarsDir, f));
+    cp.push(...jars);
+  } catch {}
+
+  const jvmDeps = [
+    fullCompiler,
+    kotlinStdlib,
+    findInGradleCache('org.jetbrains.kotlin', 'kotlin-script-runtime'),
+    findInGradleCache('org.jetbrains.kotlinx', 'kotlinx-coroutines-core-jvm'),
+    findInGradleCache('org.jetbrains.intellij.deps', 'trove4j'),
+    findInGradleCache('org.jetbrains', 'annotations'),
+  ].filter(Boolean);
+
+  try {
+    const cmd = [
+      `java -cp "${jvmDeps.join(':')}" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler`,
+      `"${srcDir}/ComposeHost.kt"`,
+      `-d "${hostJar}"`,
+      `-classpath "${cp.join(':')}"`,
+      `-Xplugin=${plugin}`,
+      `-no-reflect -jvm-target 17`,
+    ].join(' ');
+    execSync(cmd, { stdio: 'pipe', encoding: 'utf8' });
+    console.log(`✓ compose-host.jar (built)`);
+  } catch (e) {
+    console.warn(`⚠ Failed to build compose-host.jar: ${(e.stderr || e.message || '').slice(0, 200)}`);
+  }
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────
 
 async function main() {
@@ -319,8 +393,9 @@ async function main() {
   setupComposeJars();
   setupPretransformJar();
   setupWrappersJar();
+  setupComposeHostJar();
 
-  console.log('\nDone. Kotlin hot-reload is ready.');
+  console.log('\nDone. Compose hot-reload is ready.');
 }
 
 main().catch(e => {
