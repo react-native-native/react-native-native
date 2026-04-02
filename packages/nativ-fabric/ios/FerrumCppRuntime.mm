@@ -198,6 +198,18 @@ extern "C" int ferrum_jsi_is_null(void* runtime, void* object, const char* prop_
 // ─── JSI installation ──────────────────────────────────────────────────
 
 static void installRNARuntime(jsi::Runtime &rt) {
+  // Props from a previous runtime are now invalid — the old runtime is gone.
+  // We can't destroy jsi::Objects tied to a dead runtime (invalidate() crashes).
+  // Leak them intentionally — small, only happens on hot-reload.
+  {
+    auto &store = getPropsStore();
+    for (auto &[k, v] : store) {
+      new std::shared_ptr<jsi::Object>(std::move(v));  // leak the shared_ptr
+    }
+    store.clear();
+  }
+  g_runtime = nullptr;
+
   auto rnaObj = jsi::Object(rt);
 
   // __rna.callSync(moduleId, fnName, argsJson) → string
