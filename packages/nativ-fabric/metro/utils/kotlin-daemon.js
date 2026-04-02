@@ -23,13 +23,22 @@ function startDaemon(projectRoot) {
   if (_daemon) return;
 
   const gradleCache = path.join(process.env.HOME || '', '.gradle/caches/modules-2/files-2.1');
+  const localCache = path.join(projectRoot, '.ferrum/kotlin-cache');
   const findJar = (group, artifact) => {
+    // Check Gradle cache first
     try {
-      return execSync(
+      const result = execSync(
         `find "${gradleCache}/${group}/${artifact}" -name "*.jar" -not -name "*sources*" -not -name "*javadoc*" 2>/dev/null | sort -V | tail -1`,
         { encoding: 'utf8' }
       ).trim();
-    } catch { return ''; }
+      if (result) return result;
+    } catch {}
+    // Fall back to local cache (populated by setup-kotlin)
+    try {
+      const files = fs.readdirSync(localCache).filter(f => f.startsWith(artifact) && f.endsWith('.jar'));
+      if (files.length > 0) return path.join(localCache, files[0]);
+    } catch {}
+    return '';
   };
 
   const embeddableJars = [
