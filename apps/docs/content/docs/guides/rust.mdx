@@ -1,0 +1,192 @@
+---
+title: Rust
+description: Write native components and functions in Rust.
+---
+
+Rust gives you memory safety, zero-cost abstractions, and access to the full iOS/Android platform SDK.
+
+## Setup
+
+Run the setup command to configure your Rust toolchain for React Native Native:
+
+```bash
+npx nativ setup-rust
+```
+
+This does three things:
+
+1. **Verifies Rust is installed** — checks for `rustc` and `cargo`, with install instructions if missing
+2. **Adds cross-compilation targets** — installs `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `aarch64-linux-android`, `armv7-linux-androideabi`, and `x86_64-linux-android` via `rustup target add`
+3. **Creates `Cargo.toml`** — sets up a project-root `Cargo.toml` with the `rna-core` dependency. This is where you add additional Rust dependencies with `cargo add`
+
+For platform-specific dependencies, use target-specific sections in your `Cargo.toml`:
+
+```toml
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.5"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+```
+
+## Components
+
+Use the `#[component]` macro to define a native view. Props are extracted from struct fields automatically.
+
+```rust title="HelloRust.rs"
+use rna_core::prelude::*;
+
+#[component]
+pub struct HelloRust {
+    text: String,
+    r: f64,
+    g: f64,
+    b: f64,
+    on_press: Callback,
+}
+
+impl NativeView for HelloRust {
+    fn mount(&mut self, view: NativeViewHandle) {
+        let text = if self.text.is_empty() { "Hello from Rust!" } else { &self.text };
+
+        view.set_background_color(self.r, self.g, self.b, 1.0);
+        view.add_label(text, 0.5, 1.0, 0.0);
+
+        if self.on_press.is_set() {
+            self.on_press.invoke();
+        }
+    }
+}
+```
+
+Use it from JS — just import the file:
+
+```tsx title="App.tsx"
+import HelloRust from './HelloRust';
+
+export default function App() {
+  return (
+    <HelloRust
+      text="Props directly from JS!"
+      r={0.2}
+      g={0.9}
+      b={0.9}
+      style={{ width: '100%', height: 100 }}
+    />
+  );
+}
+```
+
+### Supported prop types
+
+| Rust type  | JS type   | Default     |
+|-----------|-----------|-------------|
+| `String`  | `string`  | `""`        |
+| `f64`     | `number`  | `0.0`       |
+| `f32`     | `number`  | `0.0`       |
+| `bool`    | `boolean` | `false`     |
+| `Callback`| `function`| no-op       |
+
+Props are automatically converted from camelCase in JS to snake_case in Rust.
+
+## Functions
+
+Use `#[function(sync)]` to export functions callable from JS:
+
+```rust title="rust_math.rs"
+#[function(sync)]
+pub fn fibonacci(n: i32) -> i32 {
+    if n <= 1 { return n; }
+    let mut a = 0i32;
+    let mut b = 1i32;
+    for _ in 2..=n {
+        let tmp = a + b;
+        a = b;
+        b = tmp;
+    }
+    b
+}
+
+#[function(sync)]
+pub fn is_prime(n: i32) -> bool {
+    if n <= 1 { return false; }
+    if n <= 3 { return true; }
+    if n % 2 == 0 || n % 3 == 0 { return false; }
+    let mut i = 5;
+    while i * i <= n {
+        if n % i == 0 || n % (i + 2) == 0 { return false; }
+        i += 6;
+    }
+    true
+}
+
+#[function(sync)]
+pub fn greet_rust(name: String) -> String {
+    format!("Hey {}, from Rust!", name)
+}
+```
+
+Import and call from JS like any module:
+
+```tsx title="App.tsx"
+import { fibonacci, is_prime, greet_rust } from './rust_math';
+
+<Text>fibonacci(10) = {String(fibonacci(10))}</Text>
+<Text>is_prime(97) = {String(is_prime(97))}</Text>
+<Text>{greet_rust("Ferrum")}</Text>
+```
+
+### Async functions
+
+Use `#[function(async)]` for heavy work. The function runs on a background thread and returns a `Promise` to JS:
+
+```rust title="async_utils.rs"
+#[function(async)]
+pub fn slow_compute(n: i32) -> i32 {
+    // Heavy work — runs on background thread, UI stays responsive
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    (0..n).sum()
+}
+```
+
+```tsx title="App.tsx"
+import { slow_compute } from './async_utils';
+
+const result = await slow_compute(1000);
+```
+
+## Platform APIs
+
+### iOS — using objc2
+
+Add framework crates to your `Cargo.toml`:
+
+```toml
+[dependencies]
+objc2-core-location = { version = "0.2", features = ["CLLocationManager"] }
+```
+
+Then use typed, memory-safe bindings:
+
+```rust
+use objc2_core_location::CLLocationManager;
+
+let manager = unsafe { CLLocationManager::new(mtm) };
+unsafe { manager.requestWhenInUseAuthorization() };
+```
+
+### Android — using JNI
+
+Access any Android Java API via the `jni` crate:
+
+```rust
+use jni::JNIEnv;
+use jni::objects::{JObject, JValue};
+
+fn get_device_name(env: &mut JNIEnv) -> String {
+    let build_class = env.find_class("android/os/Build").unwrap();
+    let model = env.get_static_field(build_class, "MODEL", "Ljava/lang/String;")
+        .unwrap().l().unwrap();
+    env.get_string(&model.into()).unwrap().into()
+}
+```

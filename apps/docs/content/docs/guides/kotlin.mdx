@@ -1,0 +1,216 @@
+---
+title: Kotlin / Compose
+description: Write native Android components and functions in Kotlin.
+---
+
+Kotlin gives you full Android SDK access. Use Jetpack Compose for declarative UI or Android Views for classic layouts.
+
+## Setup
+
+Run the setup command to download the Kotlin compiler toolchain:
+
+```bash
+npx nativ setup-kotlin
+```
+
+This downloads the following into your Gradle cache (or a local `.ferrum/kotlin-cache/` fallback):
+
+- **kotlin-compiler-embeddable** + **kotlin-stdlib** — the compiler used by Metro's Kotlin daemon
+- **android.jar** — Android API stubs for type resolution (downloaded automatically if Android SDK is not installed)
+- **d8 (R8)** — `.class` to `.dex` converter for loading compiled Kotlin on device
+
+No Android SDK or Android Studio installation is required for Kotlin hot-reload.
+
+### Compose setup
+
+If you're using Jetpack Compose (`@Composable` functions), run the additional setup command:
+
+```bash
+npx nativ setup-compose
+```
+
+This builds three JARs needed for standalone Compose compilation outside of Gradle:
+
+- **compose-pretransform** — provides `remember` inline body stubs for the Compose compiler plugin
+- **compose-wrappers** — non-inline wrappers for `Box`, `Column`, `Row`, and `Spacer`
+- **compose-host** — `ComposeView.setContent` wrapper for hot-reload
+
+This command includes everything `setup-kotlin` does, so you only need to run one or the other.
+
+## Compose components
+
+Mark a `@Composable` function with `// @rna_component`:
+
+```kotlin title="ComposeCard.kt"
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+// @rna_component
+@Composable
+fun ComposeCard(title: String) {
+    var count by remember { mutableIntStateOf(0) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFC6A1B9A), RoundedCornerShape(12.dp))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = if (title.isNotEmpty()) title else "Compose Card",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Taps: $count",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 14.sp
+            )
+        }
+    }
+}
+```
+
+```tsx title="App.tsx"
+import ComposeCard from './ComposeCard';
+
+<ComposeCard
+  title="Hello from Compose!"
+  style={{ width: '100%', height: 100, borderRadius: 12, overflow: 'hidden' }}
+/>
+```
+
+## Android View components
+
+For classic Android Views, use `// @rna_component` on a plain function:
+
+```kotlin title="KotlinCounter.kt"
+import android.graphics.Color
+import android.graphics.Typeface
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
+
+// @rna_component
+fun KotlinCounter(parent: ViewGroup, props: Map<String, Any?>) {
+    val context = parent.context
+    val title = props["title"] as? String ?: "Kotlin Counter"
+    val bgColor = when (props["color"] as? String) {
+        "blue" -> Color.parseColor("#1565C0")
+        "green" -> Color.parseColor("#2E7D32")
+        "purple" -> Color.parseColor("#6A1B9A")
+        else -> Color.parseColor("#E91E63")
+    }
+
+    val root = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setBackgroundColor(bgColor)
+        setPadding(48, 32, 48, 32)
+    }
+
+    root.addView(TextView(context).apply {
+        text = title
+        setTextColor(Color.WHITE)
+        textSize = 16f
+        typeface = Typeface.DEFAULT_BOLD
+    })
+
+    parent.addView(root, FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT
+    ))
+}
+```
+
+```tsx title="App.tsx"
+import KotlinCounter from './KotlinCounter';
+
+<KotlinCounter
+  title="Hello from Kotlin!"
+  color="purple"
+  style={{ width: '100%', height: 80, borderRadius: 12, overflow: 'hidden' }}
+/>
+```
+
+## Functions
+
+Use `// @rna_export(sync)` to export plain Kotlin functions:
+
+```kotlin title="kotlin_utils.kt"
+// @rna_export(sync)
+fun factorial(n: Int): Long {
+    var result = 1L
+    for (i in 2..n) result *= i
+    return result
+}
+
+// @rna_export(sync)
+fun isPalindrome(text: String): Boolean {
+    val clean = text.lowercase().filter { it.isLetterOrDigit() }
+    return clean == clean.reversed()
+}
+
+// @rna_export(sync)
+fun greetKotlin(name: String): String {
+    return "Hey $name, from Kotlin!"
+}
+```
+
+```tsx title="App.tsx"
+import { factorial, isPalindrome, greetKotlin } from './kotlin_utils';
+
+<Text>factorial(10) = {String(factorial?.(10))}</Text>
+<Text>isPalindrome("racecar") = {String(isPalindrome?.("racecar"))}</Text>
+<Text>{greetKotlin?.("Ferrum")}</Text>
+```
+
+### Async functions
+
+Use `// @rna_export(async)` for functions that do heavy work or I/O:
+
+```kotlin title="async_utils.kt"
+// @rna_export(async)
+fun fetchUser(id: Int): String {
+    // Runs on a background thread — won't block the UI
+    Thread.sleep(1000)
+    return "{\"id\": $id, \"name\": \"User $id\"}"
+}
+```
+
+```tsx title="App.tsx"
+import { fetchUser } from './async_utils';
+
+const user = await fetchUser(42);
+```
+
+## Hot-reload
+
+Kotlin hot-reload compiles to `.dex` files loaded via `DexClassLoader`:
+
+1. Edit your `.kt` file
+2. Save
+3. Metro compiles it with `kotlinc` + Compose compiler plugin
+4. The device loads the new `.dex`
+5. The component re-renders
+
+State in `remember` blocks is preserved across reloads.
