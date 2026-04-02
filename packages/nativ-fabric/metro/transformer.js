@@ -363,7 +363,7 @@ module.exports.transform = async function ferrumTransform({
 
   // ── Swift files → function or component shim
   if (filename.endsWith('.swift')) {
-    const { compileSwiftDylib, extractSwiftExports } = require('./swift-compiler');
+    const { compileSwiftDylib, extractSwiftExports } = require('./compilers/swift-compiler');
 
     const swiftSrc = fs.readFileSync(filename, 'utf8');
     const isSwiftComponent = swiftSrc.includes('@rna_component') || swiftSrc.includes('ferrum::component');
@@ -428,7 +428,7 @@ module.exports.transform = async function ferrumTransform({
     }
 
     // Check if this is a component (RNA_COMPONENT / ferrum::component)
-    const { isCppComponent, extractCppComponentProps } = require('./cpp-ast-extractor');
+    const { isCppComponent, extractCppComponentProps } = require('./extractors/cpp-ast-extractor');
     if (isCppComponent(filename)) {
       const baseName = path.basename(filename).replace(/\.(cpp|cc|mm)$/, '').toLowerCase();
       const componentId = `ferrum.${baseName}`;

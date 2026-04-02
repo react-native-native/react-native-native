@@ -203,11 +203,11 @@ public class KotlinDaemon {
             java.io.File warmup = java.io.File.createTempFile("warmup", ".kt");
             warmup.deleteOnExit();
             java.io.FileWriter fw = new java.io.FileWriter(warmup);
-            fw.write("import android.view.View\\nimport android.widget.TextView\\n" +
-                     "import android.widget.FrameLayout\\nimport android.graphics.Color\\n" +
-                     "fun _warmup(ctx: android.content.Context) {\\n" +
-                     "  val tv = TextView(ctx); tv.text = \"hi\"; tv.setTextColor(Color.WHITE)\\n" +
-                     "  val fl = FrameLayout(ctx); fl.addView(tv)\\n}\\n");
+            fw.write("import android.view.View\nimport android.widget.TextView\n" +
+                     "import android.widget.FrameLayout\nimport android.graphics.Color\n" +
+                     "fun _warmup(ctx: android.content.Context) {\n" +
+                     "  val tv = TextView(ctx); tv.text = \"hi\"; tv.setTextColor(Color.WHITE)\n" +
+                     "  val fl = FrameLayout(ctx); fl.addView(tv)\n}\n");
             fw.close();
             java.io.File warmupOut = java.io.File.createTempFile("warmup-out", "");
             warmupOut.delete(); warmupOut.mkdirs(); warmupOut.deleteOnExit();
