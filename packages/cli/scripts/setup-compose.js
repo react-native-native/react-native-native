@@ -46,10 +46,22 @@ function download(url, dest) {
   });
 }
 
-function findInGradleCache(group, artifact, nameFilter) {
+function findInGradleCache(group, artifact, nameFilter, version) {
   const dir = path.join(gradleCache, group, artifact);
   if (!fs.existsSync(dir)) return null;
   try {
+    // If version specified, look in that version's directory first
+    if (version) {
+      const versionDir = path.join(dir, version);
+      if (fs.existsSync(versionDir)) {
+        const result = execSync(
+          `find "${versionDir}" -name "${nameFilter || '*.jar'}" -not -name "*sources*" -not -name "*javadoc*" 2>/dev/null | head -1`,
+          { encoding: 'utf8' }
+        ).trim();
+        if (result && fs.existsSync(result)) return result;
+      }
+    }
+    // Fall back to latest version
     const result = execSync(
       `find "${dir}" -name "${nameFilter || '*.jar'}" -not -name "*sources*" -not -name "*javadoc*" 2>/dev/null | sort -V | tail -1`,
       { encoding: 'utf8' }
@@ -192,7 +204,7 @@ fun currentComposer(): Any? = null
 `);
 
   // Try to compile with the Kotlin compiler
-  const kotlinStdlib = findInGradleCache('org.jetbrains.kotlin', 'kotlin-stdlib');
+  const kotlinStdlib = findInGradleCache('org.jetbrains.kotlin', 'kotlin-stdlib', null, KOTLIN_VERSION);
   if (!kotlinStdlib) {
     console.warn('⚠ Cannot build pretransform JAR — kotlin-stdlib not in Gradle cache');
     return;
@@ -265,7 +277,7 @@ fun Spacer(modifier: Modifier = Modifier) = androidx.compose.foundation.layout.S
   // Skip if deps aren't available — it'll be built on first Android build.
   const plugin = setupComposePlugin();
   const fullCompiler = path.join(outDir, `kotlin-compiler-${KOTLIN_VERSION}.jar`);
-  const kotlinStdlib = findInGradleCache('org.jetbrains.kotlin', 'kotlin-stdlib');
+  const kotlinStdlib = findInGradleCache('org.jetbrains.kotlin', 'kotlin-stdlib', null, KOTLIN_VERSION);
 
   if (!plugin || !fs.existsSync(fullCompiler) || !kotlinStdlib) {
     console.warn('⚠ Cannot build compose-wrappers.jar — missing deps. Run Android build first.');
@@ -286,7 +298,7 @@ fun Spacer(modifier: Modifier = Modifier) = androidx.compose.foundation.layout.S
   const jvmDeps = [
     fullCompiler,
     kotlinStdlib,
-    findInGradleCache('org.jetbrains.kotlin', 'kotlin-script-runtime'),
+    findInGradleCache('org.jetbrains.kotlin', 'kotlin-script-runtime', null, KOTLIN_VERSION),
     findInGradleCache('org.jetbrains.kotlinx', 'kotlinx-coroutines-core-jvm'),
     findInGradleCache('org.jetbrains.intellij.deps', 'trove4j'),
     findInGradleCache('org.jetbrains', 'annotations'),
@@ -345,7 +357,7 @@ object ComposeHost {
 
   const plugin = setupComposePlugin();
   const fullCompiler = path.join(outDir, `kotlin-compiler-${KOTLIN_VERSION}.jar`);
-  const kotlinStdlib = findInGradleCache('org.jetbrains.kotlin', 'kotlin-stdlib');
+  const kotlinStdlib = findInGradleCache('org.jetbrains.kotlin', 'kotlin-stdlib', null, KOTLIN_VERSION);
 
   if (!plugin || !fs.existsSync(fullCompiler) || !kotlinStdlib) {
     console.warn('⚠ Cannot build compose-host.jar — missing deps');
@@ -353,6 +365,26 @@ object ComposeHost {
   }
 
   const cp = [kotlinStdlib];
+  // Add android.jar for Android types (ViewGroup, FrameLayout, Context)
+  const androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT
+    || path.join(process.env.HOME || '', 'Library/Android/sdk');
+  const platformsDir = path.join(androidHome, 'platforms');
+  if (fs.existsSync(platformsDir)) {
+    const platforms = fs.readdirSync(platformsDir).sort();
+    if (platforms.length > 0) {
+      const jar = path.join(platformsDir, platforms[platforms.length - 1], 'android.jar');
+      if (fs.existsSync(jar)) cp.push(jar);
+    }
+  }
+  // Fall back to local cache
+  const localAndroidJar = path.join(process.cwd(), '.ferrum/kotlin-cache/android.jar');
+  if (!cp.some(p => p.includes('android.jar')) && fs.existsSync(localAndroidJar)) cp.push(localAndroidJar);
+
+  // Add pretransform + wrappers JARs for Compose type resolution
+  const ptJar = path.join(outDir, `compose-pretransform-${COMPOSE_VERSION}.jar`);
+  if (fs.existsSync(ptJar)) cp.unshift(ptJar);
+  const wrappersJar = path.join(outDir, 'compose-wrappers.jar');
+  if (fs.existsSync(wrappersJar)) cp.unshift(wrappersJar);
   try {
     const jars = fs.readdirSync(composeJarsDir).filter(f => f.endsWith('.jar')).map(f => path.join(composeJarsDir, f));
     cp.push(...jars);
@@ -361,7 +393,7 @@ object ComposeHost {
   const jvmDeps = [
     fullCompiler,
     kotlinStdlib,
-    findInGradleCache('org.jetbrains.kotlin', 'kotlin-script-runtime'),
+    findInGradleCache('org.jetbrains.kotlin', 'kotlin-script-runtime', null, KOTLIN_VERSION),
     findInGradleCache('org.jetbrains.kotlinx', 'kotlinx-coroutines-core-jvm'),
     findInGradleCache('org.jetbrains.intellij.deps', 'trove4j'),
     findInGradleCache('org.jetbrains', 'annotations'),
