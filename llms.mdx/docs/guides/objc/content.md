@@ -1,0 +1,117 @@
+# Swift / SwiftUI (/docs/guides/objc)
+
+
+
+Swift gives you direct access to every Apple framework with SwiftUI for declarative components.
+
+Setup [#setup]
+
+No additional setup is required. Xcode provides `swiftc` for compilation, which is already available if you have a working React Native iOS development environment.
+
+SwiftUI components [#swiftui-components]
+
+Mark a SwiftUI `View` with `// @rna_component`:
+
+```swift title="SwiftCounter.swift"
+import SwiftUI
+import UIKit
+
+// @rna_component
+struct SwiftCounterView: View {
+    let title: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+            Text("SwiftUI inside React Native")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(color)
+    }
+}
+```
+
+```tsx title="App.tsx"
+import SwiftCounter from './SwiftCounter';
+
+<SwiftCounter
+  title="Hello from SwiftUI!"
+  r={0.9}
+  g={0.5}
+  b={0.9}
+  style={{ width: '100%', height: 80, borderRadius: 12, overflow: 'hidden' }}
+/>
+```
+
+Functions [#functions]
+
+Use `// @rna_export` to export plain Swift functions:
+
+```swift title="platform_info.swift"
+import Foundation
+import UIKit
+
+// @rna_export
+func deviceName() -> String {
+    return UIDevice.current.name
+}
+
+// @rna_export
+func systemVersion() -> String {
+    return "iOS " + UIDevice.current.systemVersion
+}
+
+// @rna_export
+func batteryLevel() -> Float {
+    UIDevice.current.isBatteryMonitoringEnabled = true
+    return UIDevice.current.batteryLevel
+}
+```
+
+```tsx title="App.tsx"
+import { deviceName, systemVersion, batteryLevel } from './platform_info';
+
+<Text>device: {deviceName()}</Text>
+<Text>os: {systemVersion()}</Text>
+<Text>battery: {String(batteryLevel())}</Text>
+```
+
+Using Apple frameworks [#using-apple-frameworks]
+
+Any iOS framework is available — CoreLocation, AVFoundation, CoreML, ARKit, HealthKit, and more:
+
+```swift
+import CoreLocation
+
+// @rna_export
+func isLocationEnabled() -> Bool {
+    return CLLocationManager.locationServicesEnabled()
+}
+```
+
+```swift
+import AVFoundation
+
+// @rna_export
+func audioCategory() -> String {
+    return AVAudioSession.sharedInstance().category.rawValue
+}
+```
+
+Hot-reload [#hot-reload]
+
+Swift hot-reload uses `dlopen` on code-signed `.dylib` files:
+
+1. Edit your `.swift` file
+2. Save
+3. Metro compiles it with `swiftc`
+4. The `.dylib` is code-signed automatically
+5. The device loads it via `dlopen`
+6. The component re-renders
+
+No Xcode rebuild needed.

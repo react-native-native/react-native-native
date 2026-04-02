@@ -1,0 +1,103 @@
+# Production Builds (/docs/getting-started/production)
+
+
+
+During development, native code hot-reloads via `dlopen` (iOS) and `DexClassLoader` (Android). In production, everything is statically linked — no runtime code loading.
+
+How it works [#how-it-works]
+
+When you build for release, React Native Native:
+
+1. **Compiles** all your native files (`.rs`, `.cpp`, `.mm`, `.kt`, `.swift`) ahead of time
+2. **Statically links** them into the app binary — no `.dylib` or `.dex` files shipped
+3. **Metro bundles JS only** — native code is handled by CocoaPods (iOS) and Gradle (Android)
+
+```bash
+# iOS release build
+npx expo run:ios --configuration Release
+
+# Android release build
+npx expo run:android --variant release
+```
+
+What changes vs development [#what-changes-vs-development]
+
+|                         | Development                       | Production          |
+| ----------------------- | --------------------------------- | ------------------- |
+| **Native code loading** | `dlopen` / `DexClassLoader`       | Statically linked   |
+| **Hot-reload**          | Yes                               | No                  |
+| **Code signing**        | Ad-hoc per `.dylib`               | App-level signing   |
+| **Metro serves native** | Yes (`.dylib` / `.dex` over HTTP) | No (JS bundle only) |
+| **Performance**         | Same                              | Same                |
+
+Local builds [#local-builds]
+
+For local builds, everything is automatic. CocoaPods and Gradle invoke the native compilers as part of the normal build — no extra steps needed.
+
+EAS Build [#eas-build]
+
+React Native Native works with [EAS Build](https://docs.expo.dev/build/introduction/). C++, ObjC++, Swift, and Kotlin are compiled by Xcode/Gradle on EAS as usual — no extra steps.
+
+**Rust requires extra setup** because `cargo` is not available on EAS build servers by default. There are two options:
+
+Option 1: Install Rust on EAS (recommended) [#option-1-install-rust-on-eas-recommended]
+
+Add a pre-install script to your `package.json` that installs Rust on the build server:
+
+```json title="package.json"
+{
+  "scripts": {
+    "eas-build-pre-install": "./scripts/install-rust.sh"
+  }
+}
+```
+
+```bash title="scripts/install-rust.sh"
+#!/bin/bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+. $HOME/.cargo/env
+
+if [ "$EAS_BUILD_PLATFORM" = "ios" ]; then
+  rustup target add aarch64-apple-ios
+elif [ "$EAS_BUILD_PLATFORM" = "android" ]; then
+  rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+fi
+```
+
+```bash
+chmod +x scripts/install-rust.sh
+```
+
+Then build normally:
+
+```bash
+eas build --platform ios
+eas build --platform android
+```
+
+This adds \~30 seconds to the build for Rust installation. The CocoaPods script phase and Gradle task will compile your Rust code as part of the normal build.
+
+Option 2: Prebuild locally [#option-2-prebuild-locally]
+
+Compile Rust to static libraries on your machine, then build on EAS without Rust installed:
+
+```bash
+# Prebuild Rust for iOS
+npx nativ build rust --platform ios
+
+# Prebuild Rust for Android
+npx nativ build rust --platform android
+```
+
+This compiles your Rust code into static libraries in `.ferrum/generated/release/`. Make sure these are not in your `.gitignore` so EAS picks them up.
+
+Then build normally:
+
+```bash
+eas build --platform ios
+eas build --platform android
+```
+
+<Callout type="info">
+  If you don't use Rust, neither option is needed — everything else compiles on EAS out of the box.
+</Callout>

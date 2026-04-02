@@ -1,0 +1,18 @@
+# Docs
+
+- **Introduction**
+
+- [Introduction](/docs): React Native Native — write native modules in Rust, C++, Kotlin, and Swift with hot-reload on device.
+- **Getting Started**
+
+- [Installation](/docs/getting-started/installation): Set up React Native Native in your Expo project.
+- [Hello World](/docs/getting-started/hello-world): Create your first native component in Rust.
+- [Production Builds](/docs/getting-started/production): How native code is bundled for production releases.
+- **Guides**
+
+- [Rust](/docs/guides/rust): Write native components and functions in Rust.
+- [C++ / ObjC++](/docs/guides/cpp): Write native functions and components in C++ and Objective-C++.
+- [Kotlin / Compose](/docs/guides/kotlin): Write native Android components and functions in Kotlin.
+- [Swift / SwiftUI](/docs/guides/objc): Write native iOS components and functions in Swift.
+
+- [Troubleshooting](/docs/troubleshooting): Diagnose and fix common React Native Native issues.
