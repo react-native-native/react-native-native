@@ -34,7 +34,7 @@ const platformIdx = args.indexOf('--platform');
 const platform = platformIdx >= 0 ? args[platformIdx + 1] : 'ios';
 const projectRoot = args.includes('--root')
   ? args[args.indexOf('--root') + 1]
-  : path.resolve(__dirname, '..');
+  : process.cwd();
 
 const isIOS = platform === 'ios';
 const isAndroid = platform === 'android';
