@@ -102,6 +102,19 @@ import { slowHello } from './async_utils';
 const result = await slowHello('World');
 ```
 
+## Main thread dispatch
+
+UIKit APIs must be called from the main thread. Add `main` to the annotation:
+
+```swift
+// @rna_export(sync, main)
+func screenBrightness() -> Float {
+    return Float(UIScreen.main.brightness)
+}
+```
+
+The bridge wraps the call in `DispatchQueue.main.sync { }` automatically. Use this for any function that touches UIKit, haptics, or other UI APIs.
+
 ## Using Apple frameworks
 
 Any iOS framework is available — CoreLocation, AVFoundation, CoreML, ARKit, HealthKit, and more:
