@@ -22,6 +22,12 @@ int ferrum_jsi_has_prop(void* runtime, void* object, const char* prop_name);
 void ferrum_jsi_call_function(void* runtime, void* object, const char* prop_name);
 void ferrum_jsi_call_function_with_string(void* runtime, void* object, const char* prop_name, const char* arg);
 
+// Type checking
+int ferrum_jsi_is_array(void* runtime, void* object, const char* prop_name);
+int ferrum_jsi_get_array_length(void* runtime, void* object, const char* prop_name);
+int ferrum_jsi_is_object(void* runtime, void* object, const char* prop_name);
+int ferrum_jsi_is_null(void* runtime, void* object, const char* prop_name);
+
 // Entry point for expo-ferrum backward compatibility
 void ferrum_cpp_install(void *runtimePtr);
 

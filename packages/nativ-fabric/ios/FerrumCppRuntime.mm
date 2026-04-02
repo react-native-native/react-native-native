@@ -59,32 +59,14 @@ extern "C" void ferrum_register_render(const char* componentId, FerrumRenderFn f
 }
 
 // ─── Props storage ─────────────────────────────────────────────────────
-// Props are snapshotted from JSI immediately in setComponentProps into a
-// plain jsi::Object that persists. A jsi::Runtime* is stored for access.
-// The snapshot is a DEEP COPY as a new JS object to avoid GC issues.
+// Props are stored as live jsi::Object references. Both setComponentProps and
+// ferrum_try_render run on the JS thread, so the object is alive during render.
+// This supports ALL prop types: strings, numbers, bools, objects, arrays, null.
 
 static jsi::Runtime* g_runtime = nullptr;
 
-// Store the STRINGIFIED props as a plain C++ string map.
-// This avoids ALL JSI lifetime issues — no stored jsi::Object references.
-struct PropsSnapshot {
-  std::unordered_map<std::string, std::string> strings;
-  std::unordered_map<std::string, double> numbers;
-  std::unordered_map<std::string, bool> bools;
-  // Callbacks: store function names that have callbacks.
-  std::unordered_set<std::string> callbacks;  // names of function props
-};
-
-// Callback store: jsi::Function refs stored SEPARATELY from PropsSnapshot.
-// Only created/accessed/destroyed on JS thread (in setComponentProps).
-// Key = "componentId::propName"
-static std::unordered_map<std::string, std::shared_ptr<jsi::Function>>& getCallbackStore() {
-  static std::unordered_map<std::string, std::shared_ptr<jsi::Function>> store;
-  return store;
-}
-
-static std::unordered_map<std::string, PropsSnapshot>& getPropsStore() {
-  static std::unordered_map<std::string, PropsSnapshot> store;
+static std::unordered_map<std::string, std::shared_ptr<jsi::Object>>& getPropsStore() {
+  static std::unordered_map<std::string, std::shared_ptr<jsi::Object>> store;
   return store;
 }
 
@@ -102,9 +84,9 @@ extern "C" const char* ferrum_try_render(const char* componentId, void* view, fl
   void* props_ptr = nullptr;
   auto &store = getPropsStore();
   auto sit = store.find(std::string(componentId));
-  if (sit != store.end() && g_runtime) {
+  if (sit != store.end() && sit->second && g_runtime) {
     runtime_ptr = reinterpret_cast<void*>(g_runtime);
-    props_ptr = reinterpret_cast<void*>(&sit->second);
+    props_ptr = reinterpret_cast<void*>(sit->second.get());
   }
 
   g_currentRenderingComponent = std::string(componentId);
@@ -113,15 +95,18 @@ extern "C" const char* ferrum_try_render(const char* componentId, void* view, fl
   return "ok";
 }
 
-// ─── JSI value access (C wrappers for Rust) ───────────────────────────
+// ─── JSI value access (C wrappers for Rust/C++/Swift) ─────────────────
+// All functions receive a live jsi::Runtime* and jsi::Object* from the
+// props store. Supports all JS types: string, number, bool, object, array, null.
 
 extern "C" const char* ferrum_jsi_get_string(void* runtime, void* object, const char* prop_name) {
   if (!runtime || !object) return "";
-  auto *snapshot = reinterpret_cast<PropsSnapshot*>(object);
-  auto it = snapshot->strings.find(std::string(prop_name));
-  if (it != snapshot->strings.end()) {
+  auto &rt = *reinterpret_cast<jsi::Runtime*>(runtime);
+  auto &obj = *reinterpret_cast<jsi::Object*>(object);
+  auto val = obj.getProperty(rt, prop_name);
+  if (val.isString()) {
     static thread_local std::string buf;
-    buf = it->second;
+    buf = val.asString(rt).utf8(rt);
     return buf.c_str();
   }
   return "";
@@ -129,47 +114,85 @@ extern "C" const char* ferrum_jsi_get_string(void* runtime, void* object, const 
 
 extern "C" double ferrum_jsi_get_number(void* runtime, void* object, const char* prop_name) {
   if (!runtime || !object) return 0.0;
-  auto *snapshot = reinterpret_cast<PropsSnapshot*>(object);
-  auto it = snapshot->numbers.find(std::string(prop_name));
-  if (it != snapshot->numbers.end()) return it->second;
+  auto &rt = *reinterpret_cast<jsi::Runtime*>(runtime);
+  auto &obj = *reinterpret_cast<jsi::Object*>(object);
+  auto val = obj.getProperty(rt, prop_name);
+  if (val.isNumber()) return val.asNumber();
   return 0.0;
 }
 
 extern "C" int ferrum_jsi_get_bool(void* runtime, void* object, const char* prop_name) {
   if (!runtime || !object) return 0;
-  auto *snapshot = reinterpret_cast<PropsSnapshot*>(object);
-  auto it = snapshot->bools.find(std::string(prop_name));
-  if (it != snapshot->bools.end()) return it->second ? 1 : 0;
+  auto &rt = *reinterpret_cast<jsi::Runtime*>(runtime);
+  auto &obj = *reinterpret_cast<jsi::Object*>(object);
+  auto val = obj.getProperty(rt, prop_name);
+  if (val.isBool()) return val.getBool() ? 1 : 0;
   return 0;
 }
 
 extern "C" int ferrum_jsi_has_prop(void* runtime, void* object, const char* prop_name) {
   if (!runtime || !object) return 0;
-  auto *snapshot = reinterpret_cast<PropsSnapshot*>(object);
-  std::string name(prop_name);
-  return (snapshot->strings.count(name) || snapshot->numbers.count(name) ||
-          snapshot->bools.count(name) || snapshot->callbacks.count(name)) ? 1 : 0;
+  auto &rt = *reinterpret_cast<jsi::Runtime*>(runtime);
+  auto &obj = *reinterpret_cast<jsi::Object*>(object);
+  return obj.hasProperty(rt, prop_name) ? 1 : 0;
 }
 
 extern "C" void ferrum_jsi_call_function(void* runtime, void* object, const char* prop_name) {
-  if (!g_runtime || g_currentRenderingComponent.empty()) return;
-  auto key = g_currentRenderingComponent + "::" + prop_name;
-  auto &cbs = getCallbackStore();
-  auto it = cbs.find(key);
-  if (it != cbs.end() && it->second) {
-    it->second->call(*g_runtime);
+  if (!runtime || !object) return;
+  auto &rt = *reinterpret_cast<jsi::Runtime*>(runtime);
+  auto &obj = *reinterpret_cast<jsi::Object*>(object);
+  auto val = obj.getProperty(rt, prop_name);
+  if (val.isObject() && val.asObject(rt).isFunction(rt)) {
+    val.asObject(rt).asFunction(rt).call(rt);
   }
 }
 
 extern "C" void ferrum_jsi_call_function_with_string(void* runtime, void* object,
                                                       const char* prop_name, const char* arg) {
-  if (!g_runtime || g_currentRenderingComponent.empty()) return;
-  auto key = g_currentRenderingComponent + "::" + prop_name;
-  auto &cbs = getCallbackStore();
-  auto it = cbs.find(key);
-  if (it != cbs.end() && it->second) {
-    it->second->call(*g_runtime, jsi::String::createFromUtf8(*g_runtime, arg));
+  if (!runtime || !object) return;
+  auto &rt = *reinterpret_cast<jsi::Runtime*>(runtime);
+  auto &obj = *reinterpret_cast<jsi::Object*>(object);
+  auto val = obj.getProperty(rt, prop_name);
+  if (val.isObject() && val.asObject(rt).isFunction(rt)) {
+    val.asObject(rt).asFunction(rt).call(rt, jsi::String::createFromUtf8(rt, arg));
   }
+}
+
+// ─── New: array and object access ─────────────────────────────────────
+
+extern "C" int ferrum_jsi_is_array(void* runtime, void* object, const char* prop_name) {
+  if (!runtime || !object) return 0;
+  auto &rt = *reinterpret_cast<jsi::Runtime*>(runtime);
+  auto &obj = *reinterpret_cast<jsi::Object*>(object);
+  auto val = obj.getProperty(rt, prop_name);
+  return (val.isObject() && val.asObject(rt).isArray(rt)) ? 1 : 0;
+}
+
+extern "C" int ferrum_jsi_get_array_length(void* runtime, void* object, const char* prop_name) {
+  if (!runtime || !object) return 0;
+  auto &rt = *reinterpret_cast<jsi::Runtime*>(runtime);
+  auto &obj = *reinterpret_cast<jsi::Object*>(object);
+  auto val = obj.getProperty(rt, prop_name);
+  if (val.isObject() && val.asObject(rt).isArray(rt)) {
+    return (int)val.asObject(rt).asArray(rt).size(rt);
+  }
+  return 0;
+}
+
+extern "C" int ferrum_jsi_is_object(void* runtime, void* object, const char* prop_name) {
+  if (!runtime || !object) return 0;
+  auto &rt = *reinterpret_cast<jsi::Runtime*>(runtime);
+  auto &obj = *reinterpret_cast<jsi::Object*>(object);
+  auto val = obj.getProperty(rt, prop_name);
+  return (val.isObject() && !val.asObject(rt).isArray(rt) && !val.asObject(rt).isFunction(rt)) ? 1 : 0;
+}
+
+extern "C" int ferrum_jsi_is_null(void* runtime, void* object, const char* prop_name) {
+  if (!runtime || !object) return 1;
+  auto &rt = *reinterpret_cast<jsi::Runtime*>(runtime);
+  auto &obj = *reinterpret_cast<jsi::Object*>(object);
+  auto val = obj.getProperty(rt, prop_name);
+  return (val.isNull() || val.isUndefined()) ? 1 : 0;
 }
 
 // ─── JSI installation ──────────────────────────────────────────────────
@@ -374,8 +397,8 @@ static void installRNARuntime(jsi::Runtime &rt) {
 #endif
 
   // __rna.setComponentProps(componentId, propsObject)
-  // Just stores the JSI props. Fabric's updateProps (triggered by propsJson change)
-  // handles the re-render via ferrum_try_render.
+  // Stores the live JSI object. ferrum_try_render passes it directly to the
+  // render function. Supports all prop types (objects, arrays, functions, etc).
   auto setComponentProps = jsi::Function::createFromHostFunction(
       rt,
       jsi::PropNameID::forAscii(rt, "setComponentProps"),
@@ -390,31 +413,7 @@ static void installRNARuntime(jsi::Runtime &rt) {
         auto &store = getPropsStore();
 
         if (args[1].isObject()) {
-          auto obj = args[1].asObject(rt);
-          PropsSnapshot snap;
-
-          // Snapshot all properties into plain C++ maps — no JSI references stored
-          auto names = obj.getPropertyNames(rt);
-          for (size_t i = 0; i < names.size(rt); i++) {
-            auto name = names.getValueAtIndex(rt, i).getString(rt).utf8(rt);
-            auto val = obj.getProperty(rt, jsi::PropNameID::forUtf8(rt, name));
-            if (val.isString()) {
-              snap.strings[name] = val.asString(rt).utf8(rt);
-            } else if (val.isNumber()) {
-              snap.numbers[name] = val.asNumber();
-            } else if (val.isBool()) {
-              snap.bools[name] = val.getBool();
-            } else if (val.isObject() && val.asObject(rt).isFunction(rt)) {
-              snap.callbacks.insert(name);
-              // Store the actual jsi::Function in a separate map (JS thread only)
-              auto key = componentId + "::" + name;
-              getCallbackStore()[key] = std::make_shared<jsi::Function>(
-                val.asObject(rt).asFunction(rt));
-            }
-          }
-          // obj goes out of scope here — jsi::Object destroyed on JS thread (safe)
-
-          store[componentId] = std::move(snap);
+          store[componentId] = std::make_shared<jsi::Object>(args[1].asObject(rt));
         } else {
           store.erase(componentId);
         }
@@ -477,10 +476,6 @@ RCT_EXPORT_MODULE(RNARuntime)
 
 + (BOOL)requiresMainQueueSetup {
   return NO;
-}
-
-+ (NSString *)moduleName {
-  return @"RNARuntime";
 }
 
 @end

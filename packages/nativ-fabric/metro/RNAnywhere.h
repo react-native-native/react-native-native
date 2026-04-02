@@ -36,12 +36,21 @@ extern "C" {
   typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
   void ferrum_register_render(const char*, FerrumRenderFn);
 
+  // Scalar props
   const char* ferrum_jsi_get_string(void* rt, void* obj, const char* name);
   double ferrum_jsi_get_number(void* rt, void* obj, const char* name);
   int ferrum_jsi_get_bool(void* rt, void* obj, const char* name);
   int ferrum_jsi_has_prop(void* rt, void* obj, const char* name);
+
+  // Callbacks
   void ferrum_jsi_call_function(void* rt, void* obj, const char* name);
   void ferrum_jsi_call_function_with_string(void* rt, void* obj, const char* name, const char* arg);
+
+  // Type checking
+  int ferrum_jsi_is_array(void* rt, void* obj, const char* name);
+  int ferrum_jsi_get_array_length(void* rt, void* obj, const char* name);
+  int ferrum_jsi_is_object(void* rt, void* obj, const char* name);
+  int ferrum_jsi_is_null(void* rt, void* obj, const char* name);
 }
 
 // Helper: extract a std::string prop
