@@ -217,8 +217,15 @@ fun currentComposer(): Any? = null
   }
 
   try {
-    const jvmCp = [fullCompiler, kotlinStdlib].filter(Boolean);
-    const cmd = `java -cp "${jvmCp.join(':')}" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler "${srcDir}/Composables.kt" -d "${ptJar}" -classpath "${kotlinStdlib}" -no-reflect -jvm-target 17 2>&1`;
+    const jvmCp = [
+      fullCompiler,
+      kotlinStdlib,
+      findInGradleCache('org.jetbrains.kotlin', 'kotlin-script-runtime', null, KOTLIN_VERSION),
+      findInGradleCache('org.jetbrains.kotlinx', 'kotlinx-coroutines-core-jvm'),
+      findInGradleCache('org.jetbrains.intellij.deps', 'trove4j'),
+      findInGradleCache('org.jetbrains', 'annotations'),
+    ].filter(Boolean);
+    const cmd = `java -cp "${jvmCp.join(':')}" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler "${srcDir}/Composables.kt" -d "${ptJar}" -classpath "${kotlinStdlib}" -no-reflect -no-stdlib -jvm-target 17 2>&1`;
     execSync(cmd, { stdio: 'pipe', encoding: 'utf8' });
     console.log(`✓ compose-pretransform-${COMPOSE_VERSION}.jar (built)`);
   } catch (e) {
@@ -254,8 +261,9 @@ import androidx.compose.ui.Modifier
 fun Box(
     modifier: Modifier = Modifier,
     contentAlignment: Alignment = Alignment.TopStart,
+    propagateMinConstraints: Boolean = false,
     content: @Composable BoxScope.() -> Unit
-) = androidx.compose.foundation.layout.Box(modifier, contentAlignment, content)
+) = androidx.compose.foundation.layout.Box(modifier, contentAlignment, propagateMinConstraints, content)
 
 @Composable
 fun Column(
@@ -285,6 +293,20 @@ fun Spacer(modifier: Modifier = Modifier) = androidx.compose.foundation.layout.S
   }
 
   const cp = [kotlinStdlib];
+  // Add android.jar for Android types
+  const androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT
+    || path.join(process.env.HOME || '', 'Library/Android/sdk');
+  const wrapperPlatformsDir = path.join(androidHome, 'platforms');
+  if (fs.existsSync(wrapperPlatformsDir)) {
+    const platforms = fs.readdirSync(wrapperPlatformsDir).sort();
+    if (platforms.length > 0) {
+      const jar = path.join(wrapperPlatformsDir, platforms[platforms.length - 1], 'android.jar');
+      if (fs.existsSync(jar)) cp.push(jar);
+    }
+  }
+  const localAndroidJar = path.join(process.cwd(), '.ferrum/kotlin-cache/android.jar');
+  if (!cp.some(p => p.includes('android.jar')) && fs.existsSync(localAndroidJar)) cp.push(localAndroidJar);
+
   // Add all Compose JARs to classpath
   try {
     const jars = fs.readdirSync(composeJarsDir).filter(f => f.endsWith('.jar')).map(f => path.join(composeJarsDir, f));
@@ -311,7 +333,7 @@ fun Spacer(modifier: Modifier = Modifier) = androidx.compose.foundation.layout.S
       `-d "${wrappersJar}"`,
       `-classpath "${cp.join(':')}"`,
       `-Xplugin=${plugin}`,
-      `-no-reflect -jvm-target 17`,
+      `-no-reflect -no-stdlib -jvm-target 17`,
     ].join(' ');
     execSync(cmd, { stdio: 'pipe', encoding: 'utf8' });
     console.log(`✓ compose-wrappers.jar (built)`);
