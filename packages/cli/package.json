@@ -1,0 +1,7 @@
+{
+  "name": "@react-native-native/cli",
+  "version": "0.1.0",
+  "bin": {
+    "rnn": "./bin/rnn.js"
+  }
+}
