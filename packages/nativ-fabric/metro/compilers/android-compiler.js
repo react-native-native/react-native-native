@@ -78,7 +78,7 @@ function compileAndroidCppDylib(filepath, includePaths, exports, projectRoot, { 
     '-std=c++17',
     '-target', ABI_MAP[target]?.target || 'aarch64-linux-android24',
     '-DANDROID', '-D__ANDROID__',
-    `-I${path.join(projectRoot, 'ferrum')}`, // RNAnywhere.h
+    `-I${path.resolve(__dirname, '..')}`, // RNAnywhere.h
     '-o', soPath,
     filepath,
     bridgePath,
@@ -253,7 +253,7 @@ static void register_${baseName}() {
     '-std=c++17',
     '-target', ABI_MAP[target]?.target || 'aarch64-linux-android24',
     '-DANDROID', '-D__ANDROID__',
-    `-I${path.join(projectRoot, 'ferrum')}`,
+    `-I${path.resolve(__dirname, '..')}`,
     '-o', soPath,
     filepath,
     bridgePath,
