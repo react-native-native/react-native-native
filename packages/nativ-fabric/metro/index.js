@@ -8,7 +8,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { startDaemon, stopDaemon } = require('./kotlin-daemon');
+const { startDaemon, stopDaemon } = require('./utils/kotlin-daemon');
 
 function withReactNativeNative(config) {
   const projectRoot = config.projectRoot || process.cwd();

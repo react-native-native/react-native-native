@@ -9,7 +9,7 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const { extractRustExports } = require('./rust-extractor');
+const { extractRustExports } = require('../extractors/rust-extractor');
 
 let _signingIdentity = null;
 let _resolved = false;

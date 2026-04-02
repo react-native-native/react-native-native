@@ -6,15 +6,15 @@
 
 const path = require('path');
 const fs = require('fs');
-const { extractCppExports } = require('./cpp-ast-extractor');
-const { generateDTS } = require('./dts-generator');
-const { getIncludePaths } = require('./include-resolver');
-const { generateCompileCommands } = require('./compile-commands');
-const { compileDylib, compileCppComponentDylib } = require('./dylib-compiler');
-const { compileRustDylib } = require('./rust-compiler');
-const { extractRustExports } = require('./rust-extractor');
-const { compileAndroidCppDylib, compileAndroidCppComponentDylib, compileAndroidRustDylib } = require('./android-compiler');
-const { compileKotlinDex, extractKotlinExports } = require('./kotlin-compiler');
+const { extractCppExports } = require('./extractors/cpp-ast-extractor');
+const { extractRustExports } = require('./extractors/rust-extractor');
+const { generateDTS } = require('./utils/dts-generator');
+const { getIncludePaths } = require('./utils/include-resolver');
+const { generateCompileCommands } = require('./utils/compile-commands');
+const { compileDylib, compileCppComponentDylib } = require('./compilers/dylib-compiler');
+const { compileRustDylib } = require('./compilers/rust-compiler');
+const { compileAndroidCppDylib, compileAndroidCppComponentDylib, compileAndroidRustDylib } = require('./compilers/android-compiler');
+const { compileKotlinDex, extractKotlinExports } = require('./compilers/kotlin-compiler');
 
 // Resolve the default Expo transformer once
 const upstreamTransformerPath = (() => {

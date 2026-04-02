@@ -135,7 +135,7 @@ class CppDaemon extends EventEmitter {
     });
 
     // Extract exports
-    const { extractCppExports } = require('./cpp-ast-extractor');
+    const { extractCppExports } = require('../extractors/cpp-ast-extractor');
     const exports = extractCppExports(filepath, this.includePaths, null);
 
     if (exports.length === 0) {

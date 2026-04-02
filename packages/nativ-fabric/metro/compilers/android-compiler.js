@@ -58,9 +58,9 @@ function compileAndroidCppDylib(filepath, includePaths, exports, projectRoot) {
   const soPath = path.join(outputDir, `${moduleId}.so`);
 
   // Generate bridge (same as iOS)
-  const { extractCppExports } = require('./cpp-ast-extractor');
+  const { extractCppExports } = require('../extractors/cpp-ast-extractor');
   const bridgePath = path.join(outputDir, `${moduleId}_android_bridge.cpp`);
-  const { generateBridge } = require('./bridge-generator');
+  const { generateBridge } = require('../utils/bridge-generator');
   const bridgeSource = generateAndroidBridge(exports, moduleId);
   fs.writeFileSync(bridgePath, bridgeSource);
 

@@ -19,10 +19,10 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 
 // Reuse existing extractors
-const { extractCppExports, isCppComponent, extractCppComponentProps } = require('./cpp-ast-extractor');
-const { extractRustExports } = require('./rust-extractor');
+const { extractCppExports, isCppComponent, extractCppComponentProps } = require('../extractors/cpp-ast-extractor');
+const { extractRustExports } = require('../extractors/rust-extractor');
 const { extractSwiftExports } = require('./swift-compiler');
-const { extractKotlinExports } = require('./kotlin-extractor');
+const { extractKotlinExports } = require('../extractors/kotlin-extractor');
 
 // Reuse existing bridge generators
 const { generateBridge } = require('./dylib-compiler');
@@ -165,7 +165,7 @@ function buildRustStatic() {
   // Shared types (NativeViewHandle, NativeView) come from rna-core via crate root.
   // No duplicate stdlib — one .a file.
   const { generateFunctionWrapper, generateComponentWrapper } = require('./rust-compiler');
-  const { extractRustExports: _extractRust } = require('./rust-extractor');
+  const { extractRustExports: _extractRust } = require('../extractors/rust-extractor');
 
   const unifiedDir = path.join(projectRoot, '.ferrum/build/ferrum_unified');
   fs.mkdirSync(path.join(unifiedDir, 'src'), { recursive: true });

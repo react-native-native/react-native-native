@@ -10,8 +10,8 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const { extractKotlinExports } = require('./kotlin-extractor');
-const { compileSyncViaDaemon, isDaemonReady } = require('./kotlin-daemon');
+const { extractKotlinExports } = require('../extractors/kotlin-extractor');
+const { compileSyncViaDaemon, isDaemonReady } = require('../utils/kotlin-daemon');
 
 let _kotlincCmd = null;          // embeddable: 'java -cp ... K2JVMCompiler'
 let _kotlincComposeCmd = null;   // full compiler for Compose: 'java -cp full-compiler.jar:... K2JVMCompiler'
