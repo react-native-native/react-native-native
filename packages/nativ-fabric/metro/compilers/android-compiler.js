@@ -34,26 +34,34 @@ function resolveOnce() {
   }
 }
 
-function getNdkClang() {
+// ABI → NDK clang prefix mapping
+const ABI_MAP = {
+  'arm64-v8a':   { clang: 'aarch64-linux-android24-clang++', target: 'aarch64-linux-android24', rust: 'aarch64-linux-android' },
+  'armeabi-v7a': { clang: 'armv7a-linux-androideabi24-clang++', target: 'armv7a-linux-androideabi24', rust: 'armv7-linux-androideabi' },
+  'x86_64':      { clang: 'x86_64-linux-android24-clang++', target: 'x86_64-linux-android24', rust: 'x86_64-linux-android' },
+  'x86':         { clang: 'i686-linux-android24-clang++', target: 'i686-linux-android24', rust: 'i686-linux-android' },
+};
+
+function getNdkClang(abi = 'arm64-v8a') {
   if (!_ndkPath) return null;
-  // NDK toolchain clang for arm64
   const toolchain = path.join(_ndkPath, 'toolchains/llvm/prebuilt');
   const hosts = fs.readdirSync(toolchain);
   if (hosts.length === 0) return null;
   const hostDir = path.join(toolchain, hosts[0], 'bin');
-  return path.join(hostDir, 'aarch64-linux-android24-clang++');
+  const clangName = ABI_MAP[abi]?.clang || ABI_MAP['arm64-v8a'].clang;
+  return path.join(hostDir, clangName);
 }
 
 // ─── C++/ObjC++ → .so ──────────────────────────────────────────────────
 
-function compileAndroidCppDylib(filepath, includePaths, exports, projectRoot) {
+function compileAndroidCppDylib(filepath, includePaths, exports, projectRoot, { target = 'arm64-v8a' } = {}) {
   resolveOnce();
-  const clang = getNdkClang();
+  const clang = getNdkClang(target);
   if (!clang) return null;
 
   const name = path.basename(filepath).replace(/\.(cpp|cc|c)$/, '');
   const moduleId = name.toLowerCase();
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs');
+  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const soPath = path.join(outputDir, `${moduleId}.so`);
 
@@ -68,7 +76,7 @@ function compileAndroidCppDylib(filepath, includePaths, exports, projectRoot) {
     clang,
     '-shared', '-fPIC',
     '-std=c++17',
-    '-target', 'aarch64-linux-android24',
+    '-target', ABI_MAP[target]?.target || 'aarch64-linux-android24',
     '-DANDROID', '-D__ANDROID__',
     `-I${path.join(projectRoot, 'ferrum')}`, // RNAnywhere.h
     '-o', soPath,
@@ -186,13 +194,13 @@ function generateAndroidBridge(exports, moduleId) {
 
 // ─── C++ component → .so ───────────────────────────────────────────────
 
-function compileAndroidCppComponentDylib(filepath, includePaths, projectRoot, baseName, componentProps) {
+function compileAndroidCppComponentDylib(filepath, includePaths, projectRoot, baseName, componentProps, { target = 'arm64-v8a' } = {}) {
   resolveOnce();
-  const clang = getNdkClang();
+  const clang = getNdkClang(target);
   if (!clang) return null;
 
   const componentId = `ferrum.${baseName}`;
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs');
+  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const soPath = path.join(outputDir, `ferrum_${baseName}.so`);
 
@@ -243,7 +251,7 @@ static void register_${baseName}() {
     clang,
     '-shared', '-fPIC',
     '-std=c++17',
-    '-target', 'aarch64-linux-android24',
+    '-target', ABI_MAP[target]?.target || 'aarch64-linux-android24',
     '-DANDROID', '-D__ANDROID__',
     `-I${path.join(projectRoot, 'ferrum')}`,
     '-o', soPath,
@@ -267,7 +275,7 @@ static void register_${baseName}() {
 
 // ─── Rust → .so ────────────────────────────────────────────────────────
 
-function compileAndroidRustDylib(filepath, projectRoot) {
+function compileAndroidRustDylib(filepath, projectRoot, { target = 'arm64-v8a' } = {}) {
   resolveOnce();
 
   const { ensureRustCrate } = require('./rust-compiler');
@@ -276,34 +284,34 @@ function compileAndroidRustDylib(filepath, projectRoot) {
 
   const { crateDir, moduleId } = crate;
   const name = path.basename(filepath, '.rs');
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs');
+  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const soPath = path.join(outputDir, `ferrum_${moduleId}.so`);
 
   const sharedTarget = path.join(projectRoot, '.ferrum/cargo-target');
+  const rustTarget = ABI_MAP[target]?.rust || 'aarch64-linux-android';
 
   // Set up NDK linker
-  const ndkLinker = getNdkClang()?.replace('clang++', 'clang');
+  const ndkLinker = getNdkClang(target)?.replace('clang++', 'clang');
+  const linkerEnvKey = `CARGO_TARGET_${rustTarget.toUpperCase().replace(/-/g, '_')}_LINKER`;
 
   const cmd = [
     'cargo', 'build',
     '--manifest-path', path.join(crateDir, 'Cargo.toml'),
-    '--target=aarch64-linux-android',
+    `--target=${rustTarget}`,
     '--lib',
   ];
 
-  console.log(`[ferrum] Compiling ${name}.rs for Android via cargo...`);
+  console.log(`[ferrum] Compiling ${name}.rs for Android (${target}) via cargo...`);
   try {
     execSync(cmd.join(' '), {
       stdio: 'pipe',
       encoding: 'utf8',
       env: {
         ...process.env,
-        // No -undefined dynamic_lookup on Android (that's macOS ld only).
-        // No -lobjc either. Android uses -llog for logging.
         RUSTFLAGS: '-C link-arg=-llog',
         CARGO_TARGET_DIR: sharedTarget,
-        CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ndkLinker || '',
+        [linkerEnvKey]: ndkLinker || '',
       },
     });
   } catch (err) {
@@ -312,7 +320,7 @@ function compileAndroidRustDylib(filepath, projectRoot) {
     return null;
   }
 
-  const builtSo = path.join(sharedTarget, `aarch64-linux-android/debug/libferrum_${moduleId}.so`);
+  const builtSo = path.join(sharedTarget, `${rustTarget}/debug/libferrum_${moduleId}.so`);
   if (fs.existsSync(builtSo)) {
     fs.copyFileSync(builtSo, soPath);
     const size = fs.statSync(soPath).size;

@@ -66,7 +66,8 @@ const ${displayName} = React.forwardRef((props, ref) => {
       const _scriptUrl = NativeModules?.SourceCode?.getConstants?.()?.scriptURL || '';
       const _host = _scriptUrl.match(/^https?:\\/\\/[^/]+/)?.[0] || '';
       if (_host && global.__rna?.loadDylib) {
-        global.__rna.loadDylib(_host + '/__ferrum_dylib/ferrum_${moduleId}_' + hash + '.${_ext}');
+        const _t = global.__rna.target || '';
+        global.__rna.loadDylib(_host + '/__ferrum_dylib/' + _t + '/ferrum_${moduleId}_' + hash + '.${_ext}');
       }
     } catch (e) {
       if (typeof __DEV__ !== 'undefined' && __DEV__) console.log('[ferrum] dylib load:', e?.message);
@@ -187,8 +188,9 @@ function cppFunctionShim(exports, moduleId, srcHash, dylibId, libExt) {
     `    try {`,
     `      var _s = require('react-native').NativeModules?.SourceCode?.getConstants?.()?.scriptURL || '';`,
     `      var _h = (_s.match(/^https?:\\/\\/[^/]+/) || [''])[0];`,
+    `      var _t = global.__rna?.target || '';`,
     `      if (_h && global.__rna?.loadDylib) {`,
-    `        global.__rna.loadDylib(_h + '/__ferrum_dylib/${_dylibId}_${srcHash}.${_ext}');`,
+    `        global.__rna.loadDylib(_h + '/__ferrum_dylib/' + _t + '/${_dylibId}_${srcHash}.${_ext}');`,
     `      }`,
     `    } catch(e) {}`,
     `  }`,
@@ -250,6 +252,15 @@ module.exports.transform = async function ferrumTransform({
   const platform = options.platform || 'ios';
   const isAndroid = platform === 'android';
   const isDev = options.dev !== false;
+
+  // Read last-known target (written at startup + updated by middleware on device switch)
+  let buildTarget;
+  try {
+    const targetFile = path.join(projectRoot, `.ferrum/${isAndroid ? 'android' : 'ios'}-target`);
+    buildTarget = fs.readFileSync(targetFile, 'utf8').trim();
+  } catch {}
+  if (!buildTarget) buildTarget = isAndroid ? 'arm64-v8a' : 'device';
+
   const isNative = filename.startsWith(projectRoot) &&
                    !filename.includes('node_modules') &&
                    !filename.includes('/packages/') &&
@@ -277,19 +288,29 @@ module.exports.transform = async function ferrumTransform({
     console.log(`[ferrum] transform (${platform}): ${path.basename(filename)} (build #${++_buildCounter})`);
   }
 
-  // ── Content-addressed compile helper ──────────────────────────────────
-  // Wraps any compiler call: if the hashed output exists, skip compile.
-  // Compiler produces the original name, then we link/copy to the hashed name.
+  // ── Content-addressed compile + manifest ─────────────────────────────
+  // Compiles for the last-known target (single flash hot-reload).
+  // Also writes manifest so the middleware can compile on-demand for other targets.
+  const manifestPath = path.join(projectRoot, '.ferrum/modules.json');
+  function writeManifest(dylibName, entry) {
+    let manifest = {};
+    try { manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); } catch {}
+    manifest[dylibName] = entry;
+    fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  }
+
   function cachedCompile(srcContent, origName, ext, compileFn) {
     const hash = require('crypto').createHash('md5').update(srcContent).digest('hex').slice(0, 8);
     const hashedName = `${origName}_${hash}.${ext}`;
-    const dylibDir = path.join(projectRoot, '.ferrum/dylibs');
+    const dylibDir = path.join(projectRoot, '.ferrum/dylibs', buildTarget);
+    fs.mkdirSync(dylibDir, { recursive: true });
     const hashedPath = path.join(dylibDir, hashedName);
     if (fs.existsSync(hashedPath)) {
-      console.log(`[ferrum] ${origName} cache hit (${hash})`);
+      console.log(`[ferrum] ${origName} cache hit (${hash}, ${buildTarget})`);
       return hash;
     }
-    compileFn(); // run the actual compiler
+    compileFn(); // compile for last-known target
     const origPath = path.join(dylibDir, `${origName}.${ext}`);
     if (fs.existsSync(origPath)) {
       try { fs.copyFileSync(origPath, hashedPath); } catch {}
@@ -306,12 +327,10 @@ module.exports.transform = async function ferrumTransform({
     if (isDev) {
       const libExt = isAndroid ? 'so' : 'dylib';
       srcHash = cachedCompile(src, `ferrum_${baseName}`, libExt, () => {
-        if (isAndroid) {
-          compileAndroidRustDylib(filename, projectRoot);
-        } else {
-          compileRustDylib(filename, projectRoot);
-        }
+        if (isAndroid) compileAndroidRustDylib(filename, projectRoot, { target: buildTarget });
+        else compileRustDylib(filename, projectRoot, { target: buildTarget });
       });
+      writeManifest(`ferrum_${baseName}`, { source: filename, type: isComponent ? 'rust-component' : 'rust' });
 
       // Generate .d.ts for TypeScript support
       try {
@@ -374,8 +393,9 @@ module.exports.transform = async function ferrumTransform({
     if (isDev) {
       const origName = isSwiftComponent ? `ferrum_${moduleId}` : moduleId;
       srcHash = cachedCompile(src, origName, 'dylib', () => {
-        compileSwiftDylib(filename, projectRoot);
+        compileSwiftDylib(filename, projectRoot, { target: buildTarget });
       });
+      writeManifest(origName, { source: filename, type: isSwiftComponent ? 'swift-component' : 'swift' });
     }
 
     if (isSwiftComponent) {
@@ -439,12 +459,10 @@ module.exports.transform = async function ferrumTransform({
         const cppProps = extractCppComponentProps(filename);
         const _cppCompLibExt = isAndroid ? 'so' : 'dylib';
         srcHash = cachedCompile(src, `ferrum_${baseName}`, _cppCompLibExt, () => {
-          if (isAndroid) {
-            compileAndroidCppComponentDylib(filename, _includePaths, projectRoot, baseName, cppProps);
-          } else {
-            compileCppComponentDylib(filename, _includePaths, projectRoot, baseName, cppProps);
-          }
+          if (isAndroid) compileAndroidCppComponentDylib(filename, _includePaths, projectRoot, baseName, cppProps, { target: buildTarget });
+          else compileCppComponentDylib(filename, _includePaths, projectRoot, baseName, cppProps, { target: buildTarget });
         });
+        writeManifest(`ferrum_${baseName}`, { source: filename, type: 'cpp-component', baseName });
 
         try {
           const displayName = path.basename(filename).replace(/\.(cpp|cc|mm)$/, '');
@@ -492,13 +510,11 @@ module.exports.transform = async function ferrumTransform({
       const _cppFnLibExt = isAndroid ? 'so' : 'dylib';
       srcHash = cachedCompile(src, moduleId, _cppFnLibExt, () => {
         if (exports.length > 0) {
-          if (isAndroid) {
-            compileAndroidCppDylib(filename, _includePaths, exports, projectRoot);
-          } else {
-            compileDylib(filename, _includePaths, exports, projectRoot);
-          }
+          if (isAndroid) compileAndroidCppDylib(filename, _includePaths, exports, projectRoot, { target: buildTarget });
+          else compileDylib(filename, _includePaths, exports, projectRoot, { target: buildTarget });
         }
       });
+      writeManifest(moduleId, { source: filename, type: 'cpp' });
 
       try {
         fs.writeFileSync(filename + '.d.ts', generateDTS(exports));
@@ -526,11 +542,10 @@ module.exports.transform = async function ferrumTransform({
     let srcHash = 'prod';
     if (isDev) {
       srcHash = require('crypto').createHash('md5').update(src).digest('hex').slice(0, 8);
-
-      // Compile to .dex for Android (no-op on iOS — .kt is Android-only)
       if (isAndroid) {
         compileKotlinDex(filename, projectRoot);
       }
+      writeManifest(moduleId, { source: filename, type: isComponent ? 'kotlin-component' : 'kotlin' });
 
       // Generate .d.ts
       try {

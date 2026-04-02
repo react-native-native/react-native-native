@@ -50,11 +50,9 @@ function getIncludePaths(projectRoot) {
     }
   }
 
-  // 5. ferrum runtime header directory
-  const ferrumDir = path.join(projectRoot, 'ferrum');
-  if (fs.existsSync(ferrumDir)) {
-    paths.push(`-I${ferrumDir}`);
-  }
+  // 5. RNAnywhere.h — lives in this package's metro/ directory
+  const rnaHeaderDir = path.resolve(__dirname, '..');
+  paths.push(`-I${rnaHeaderDir}`);
 
   // 6. User source directories
   for (const dir of ['src', 'cpp', 'ios', 'include']) {

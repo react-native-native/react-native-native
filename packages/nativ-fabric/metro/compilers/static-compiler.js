@@ -148,17 +148,29 @@ function buildRustStatic() {
   const rsFiles = findUserFiles(['.rs']);
   if (rsFiles.length === 0) return;
 
-  const libName = isAndroid ? 'libferrum_user_android.a' : 'libferrum_user.a';
-  const outputLib = path.join(releaseDir, libName);
+  // Android builds for all ABIs; iOS just arm64
+  const abiTargets = isAndroid ? [
+    { abi: 'arm64-v8a',    rust: 'aarch64-linux-android',   linkerPrefix: 'aarch64-linux-android' },
+    { abi: 'armeabi-v7a',  rust: 'armv7-linux-androideabi',  linkerPrefix: 'armv7a-linux-androideabi' },
+    { abi: 'x86_64',       rust: 'x86_64-linux-android',     linkerPrefix: 'x86_64-linux-android' },
+    { abi: 'x86',          rust: 'i686-linux-android',        linkerPrefix: 'i686-linux-android' },
+  ] : [
+    { abi: 'arm64',        rust: 'aarch64-apple-ios' },
+  ];
 
-  // If pre-compiled .a exists and is newer than all source files, skip
-  if (fs.existsSync(outputLib)) {
-    const libMtime = fs.statSync(outputLib).mtimeMs;
-    const allNewer = rsFiles.every(f => fs.statSync(f).mtimeMs < libMtime);
-    if (allNewer) {
-      console.log(`[ferrum] Rust: libferrum_user.a up to date, skipping`);
-      return;
-    }
+  // Check if all outputs are up to date
+  const outputPaths = abiTargets.map(t => {
+    const dir = isAndroid ? path.join(releaseDir, t.abi) : releaseDir;
+    return path.join(dir, 'libferrum_user.a');
+  });
+  const allUpToDate = outputPaths.every(p => {
+    if (!fs.existsSync(p)) return false;
+    const libMtime = fs.statSync(p).mtimeMs;
+    return rsFiles.every(f => fs.statSync(f).mtimeMs < libMtime);
+  });
+  if (allUpToDate) {
+    console.log(`[ferrum] Rust: all targets up to date, skipping`);
+    return;
   }
 
   // Unified crate: all user .rs files compiled as modules in a single crate.
@@ -241,21 +253,11 @@ lto = true
   ].join('\n');
   fs.writeFileSync(path.join(unifiedDir, 'src/lib.rs'), libRs);
 
-  // Build
+  // Build for each ABI target
   const sharedTarget = path.join(projectRoot, '.ferrum/cargo-target');
-  const target = isIOS ? 'aarch64-apple-ios' : 'aarch64-linux-android';
 
-  const cmd = [
-    'cargo', 'build', '--release',
-    '--manifest-path', path.join(unifiedDir, 'Cargo.toml'),
-    `--target=${target}`,
-    '--lib',
-  ];
-
-  const env = { ...process.env, CARGO_TARGET_DIR: sharedTarget };
-  if (isIOS) {
-    env.RUSTFLAGS = '--cfg unified -C link-arg=-undefined -C link-arg=dynamic_lookup';
-  }
+  // Resolve NDK toolchain once for Android
+  let ndkBinDir = null;
   if (isAndroid) {
     const androidHome = process.env.ANDROID_HOME || path.join(process.env.HOME, 'Library/Android/sdk');
     const ndkDir = path.join(androidHome, 'ndk');
@@ -264,31 +266,55 @@ lto = true
       if (versions.length > 0) {
         const toolchain = path.join(ndkDir, versions[versions.length - 1], 'toolchains/llvm/prebuilt');
         const hosts = fs.readdirSync(toolchain);
-        if (hosts.length > 0) {
-          env.CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER =
-            path.join(toolchain, hosts[0], 'bin/aarch64-linux-android24-clang');
-        }
+        if (hosts.length > 0) ndkBinDir = path.join(toolchain, hosts[0], 'bin');
       }
     } catch {}
-    env.RUSTFLAGS = '--cfg unified -C link-arg=-llog';
+    if (!ndkBinDir) {
+      console.error('[ferrum] Android NDK not found — cannot build Rust for Android');
+      return;
+    }
   }
 
-  console.log(`[ferrum] Compiling unified Rust crate (${modules.length} modules, ${target})...`);
-  try {
-    execSync(cmd.join(' '), { stdio: 'pipe', encoding: 'utf8', env });
-  } catch (err) {
-    console.error(`[ferrum] Rust compile failed`);
-    console.error((err.stderr || '').slice(0, 3000));
-    return;
-  }
+  for (const { abi, rust: target, linkerPrefix } of abiTargets) {
+    const outputDir = isAndroid ? path.join(releaseDir, abi) : releaseDir;
+    fs.mkdirSync(outputDir, { recursive: true });
+    const outputLib = path.join(outputDir, 'libferrum_user.a');
 
-  const builtLib = path.join(sharedTarget, target, 'release/libferrum_user.a');
-  if (fs.existsSync(builtLib)) {
-    fs.copyFileSync(builtLib, outputLib);
-    const size = fs.statSync(outputLib).size;
-    console.log(`[ferrum] Built libferrum_user.a (${(size / 1024).toFixed(1)}KB)`);
-  } else {
-    console.error(`[ferrum] libferrum_user.a not found at ${builtLib}`);
+    const cmd = [
+      'cargo', 'build', '--release',
+      '--manifest-path', path.join(unifiedDir, 'Cargo.toml'),
+      `--target=${target}`,
+      '--lib',
+    ];
+
+    const env = { ...process.env, CARGO_TARGET_DIR: sharedTarget };
+    if (isIOS) {
+      env.RUSTFLAGS = '--cfg unified -C link-arg=-undefined -C link-arg=dynamic_lookup';
+    }
+    if (isAndroid) {
+      // Set the linker for this specific target
+      const envKey = `CARGO_TARGET_${target.toUpperCase().replace(/-/g, '_')}_LINKER`;
+      env[envKey] = path.join(ndkBinDir, `${linkerPrefix}24-clang`);
+      env.RUSTFLAGS = '--cfg unified -C link-arg=-llog';
+    }
+
+    console.log(`[ferrum] Compiling Rust (${modules.length} modules, ${abi} → ${target})...`);
+    try {
+      execSync(cmd.join(' '), { stdio: 'pipe', encoding: 'utf8', env });
+    } catch (err) {
+      console.error(`[ferrum] Rust compile failed for ${abi}`);
+      console.error((err.stderr || '').slice(0, 3000));
+      continue;
+    }
+
+    const builtLib = path.join(sharedTarget, target, 'release/libferrum_user.a');
+    if (fs.existsSync(builtLib)) {
+      fs.copyFileSync(builtLib, outputLib);
+      const size = fs.statSync(outputLib).size;
+      console.log(`[ferrum] Built ${abi}/libferrum_user.a (${(size / 1024).toFixed(1)}KB)`);
+    } else {
+      console.error(`[ferrum] libferrum_user.a not found at ${builtLib}`);
+    }
   }
 }
 

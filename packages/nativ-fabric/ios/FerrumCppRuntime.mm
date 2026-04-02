@@ -339,7 +339,7 @@ static void installRNARuntime(jsi::Runtime &rt) {
         // Use NSURLRequest with no-cache policy to bypass NSURLCache
         NSURLRequest *request = [NSURLRequest requestWithURL:url
                                                  cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
-                                             timeoutInterval:10.0];
+                                             timeoutInterval:120.0];
         NSURLResponse *response = nil;
         NSData *data = [NSURLConnection sendSynchronousRequest:request
                                              returningResponse:&response
@@ -428,6 +428,13 @@ static void installRNARuntime(jsi::Runtime &rt) {
   rnaObj.setProperty(rt, "loadDylib", std::move(loadDylib));
 #endif
   rnaObj.setProperty(rt, "setComponentProps", std::move(setComponentProps));
+
+  // Device/simulator target — used by JS shim to request correct dylib
+#if TARGET_OS_SIMULATOR
+  rnaObj.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "simulator"));
+#else
+  rnaObj.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "device"));
+#endif
 
   rt.global().setProperty(rt, "__rna", std::move(rnaObj));
   g_runtime = &rt;  // Store for render function prop access

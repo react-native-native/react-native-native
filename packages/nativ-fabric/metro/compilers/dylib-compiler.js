@@ -7,27 +7,26 @@ const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-let _sdkPath = null;
+let _sdkPaths = {};  // 'device' → path, 'simulator' → path
 let _signingIdentity = null;
 let _resolved = false;
+
+function getSdkPath(target) {
+  if (_sdkPaths[target]) return _sdkPaths[target];
+  const sdk = target === 'simulator' ? 'iphonesimulator' : 'iphoneos';
+  try {
+    _sdkPaths[target] = execSync(`xcrun --sdk ${sdk} --show-sdk-path`, {
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    console.error(`[ferrum] No iOS SDK found for ${sdk}`);
+  }
+  return _sdkPaths[target] || null;
+}
 
 function resolveOnce(projectRoot) {
   if (_resolved) return;
   _resolved = true;
-
-  try {
-    _sdkPath = execSync('xcrun --sdk iphoneos --show-sdk-path', {
-      encoding: 'utf8',
-    }).trim();
-  } catch {
-    try {
-      _sdkPath = execSync('xcrun --sdk iphonesimulator --show-sdk-path', {
-        encoding: 'utf8',
-      }).trim();
-    } catch {
-      console.error('[ferrum] No iOS SDK found');
-    }
-  }
 
   // Find the signing identity that matches the app's team ID.
   try {
@@ -93,9 +92,10 @@ function resolveOnce(projectRoot) {
  * Compile a .cpp/.mm file + generated bridge to a signed dylib.
  * Returns the dylib path, or null on failure.
  */
-function compileDylib(filepath, includePaths, exports, projectRoot) {
+function compileDylib(filepath, includePaths, exports, projectRoot, { target = 'device' } = {}) {
   resolveOnce(projectRoot);
-  if (!_sdkPath) return null;
+  const sdkPath = getSdkPath(target);
+  if (!sdkPath) return null;
 
   const rel = path.relative(projectRoot, filepath);
   const moduleId = rel
@@ -103,7 +103,7 @@ function compileDylib(filepath, includePaths, exports, projectRoot) {
     .replace(/[\/\\]/g, '_')
     .replace(/[^a-zA-Z0-9_]/g, '_');
 
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs');
+  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const dylibPath = path.join(outputDir, `${moduleId}.dylib`);
 
@@ -122,14 +122,18 @@ function compileDylib(filepath, includePaths, exports, projectRoot) {
     filteredPaths.push(includePaths[i]);
   }
 
+  const targetTriple = target === 'simulator'
+    ? 'arm64-apple-ios15.1-simulator'
+    : 'arm64-apple-ios15.1';
+
   const cmd = [
     'clang++',
     '-x', lang,
     '-std=c++17',
-    '-arch', 'arm64',
+    '-target', targetTriple,
     '-dynamiclib',
     '-fPIC',
-    '-isysroot', _sdkPath,
+    '-isysroot', sdkPath,
     ...filteredPaths,
     '-undefined', 'dynamic_lookup',
     '-o', dylibPath,
@@ -275,12 +279,13 @@ function generateBridge(exports, moduleId) {
  * The file defines a props struct + mount() function.
  * The bridge auto-generates ferrum_render that extracts props from the snapshot.
  */
-function compileCppComponentDylib(filepath, includePaths, projectRoot, baseName, componentProps) {
+function compileCppComponentDylib(filepath, includePaths, projectRoot, baseName, componentProps, { target = 'device' } = {}) {
   resolveOnce(projectRoot);
-  if (!_sdkPath) return null;
+  const sdkPath = getSdkPath(target);
+  if (!sdkPath) return null;
 
   const componentId = `ferrum.${baseName}`;
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs');
+  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const dylibPath = path.join(outputDir, `ferrum_${baseName}.dylib`);
 
@@ -343,14 +348,18 @@ static void register_${baseName}() {
     filteredPaths.push(includePaths[i]);
   }
 
+  const targetTriple = target === 'simulator'
+    ? 'arm64-apple-ios15.1-simulator'
+    : 'arm64-apple-ios15.1';
+
   const cmd = [
     'clang++',
     '-x', lang,
     '-std=c++17',
-    '-arch', 'arm64',
+    '-target', targetTriple,
     '-dynamiclib',
     '-fPIC',
-    '-isysroot', _sdkPath,
+    '-isysroot', sdkPath,
     ...filteredPaths,
     '-undefined', 'dynamic_lookup',
     '-Wno-deprecated-declarations',

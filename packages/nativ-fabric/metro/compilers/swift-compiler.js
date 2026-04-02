@@ -7,19 +7,24 @@ const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-let _sdkPath = null;
+let _sdkPaths = {};
 let _signingIdentity = null;
 let _resolved = false;
+
+function getSdkPath(target) {
+  if (_sdkPaths[target]) return _sdkPaths[target];
+  const sdk = target === 'simulator' ? 'iphonesimulator' : 'iphoneos';
+  try {
+    _sdkPaths[target] = execSync(`xcrun --sdk ${sdk} --show-sdk-path`, {
+      encoding: 'utf8',
+    }).trim();
+  } catch {}
+  return _sdkPaths[target] || null;
+}
 
 function resolveOnce(projectRoot) {
   if (_resolved) return;
   _resolved = true;
-
-  try {
-    _sdkPath = execSync('xcrun --sdk iphoneos --show-sdk-path', {
-      encoding: 'utf8',
-    }).trim();
-  } catch {}
 
   try {
     let appTeamId = null;
@@ -99,13 +104,18 @@ function extractSwiftExports(filepath) {
   return exports;
 }
 
-function compileSwiftDylib(filepath, projectRoot) {
+function compileSwiftDylib(filepath, projectRoot, { target = 'device' } = {}) {
   resolveOnce(projectRoot);
-  if (!_sdkPath) return null;
+  const sdkPath = getSdkPath(target);
+  if (!sdkPath) return null;
+
+  const targetTriple = target === 'simulator'
+    ? 'arm64-apple-ios15.1-simulator'
+    : 'arm64-apple-ios15.1';
 
   const name = path.basename(filepath, '.swift');
   const moduleId = name.toLowerCase();
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs');
+  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const _isComp = (() => {
     try { return fs.readFileSync(filepath, 'utf8').includes('@rna_component'); } catch { return false; }
@@ -137,8 +147,8 @@ void rna_register_${moduleId}(void) {
     const cmd = [
       'swiftc',
       '-emit-library',
-      '-target', 'arm64-apple-ios15.1',
-      '-sdk', _sdkPath,
+      '-target', targetTriple,
+      '-sdk', sdkPath,
       '-Xlinker', '-undefined',
       '-Xlinker', 'dynamic_lookup',
       '-o', dylibPath,
@@ -216,8 +226,8 @@ ${registrations}
   const cmd = [
     'swiftc',
     '-emit-library',
-    '-target', 'arm64-apple-ios15.1',
-    '-sdk', _sdkPath,
+    '-target', targetTriple,
+    '-sdk', sdkPath,
     '-Xlinker', '-undefined',
     '-Xlinker', 'dynamic_lookup',
     '-o', dylibPath,

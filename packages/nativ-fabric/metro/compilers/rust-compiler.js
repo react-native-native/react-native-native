@@ -111,22 +111,6 @@ function ensureNativeDylib(projectRoot) {
   }
 }
 
-function findWorkspaceRoot(projectRoot) {
-  // Walk up from projectRoot looking for a Cargo.toml with [workspace]
-  let dir = path.resolve(projectRoot);
-  for (let i = 0; i < 5; i++) {
-    const cargoPath = path.join(dir, 'Cargo.toml');
-    if (fs.existsSync(cargoPath)) {
-      const content = fs.readFileSync(cargoPath, 'utf8');
-      if (content.includes('[workspace]')) return dir;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
-
 /**
  * Ensure the per-file Cargo crate exists and src/lib.rs is up to date.
  * Shared between iOS and Android compilers.
@@ -144,31 +128,11 @@ function ensureRustCrate(filepath, projectRoot) {
     return null;
   }
 
-  // The user's Cargo.toml lives at the project root — visible, `cargo add` works.
-  const workspaceRoot = findWorkspaceRoot(projectRoot);
+  // The user's Cargo.toml must exist — created by `npx @react-native-native/cli setup-rust`
   const cargoTomlPath = path.join(projectRoot, 'Cargo.toml');
   if (!fs.existsSync(cargoTomlPath)) {
-    const rnaCoreRelPath = workspaceRoot
-      ? path.relative(projectRoot, path.join(workspaceRoot, 'crates/rna-core'))
-      : '../../crates/rna-core';
-
-    const cargoToml = `[package]
-name = "native"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-path = "lib.rs"
-
-[workspace]
-
-[dependencies]
-rna-core = { path = "${rnaCoreRelPath}" }
-`;
-    fs.writeFileSync(cargoTomlPath, cargoToml);
-    if (!fs.existsSync(path.join(projectRoot, 'lib.rs'))) {
-      fs.writeFileSync(path.join(projectRoot, 'lib.rs'), '// Shared native crate — add deps with `cargo add`\n');
-    }
+    console.error('[ferrum] No Cargo.toml found. Run: npx @react-native-native/cli setup-rust');
+    return null;
   }
 
   // Per-file build crate
@@ -177,10 +141,13 @@ rna-core = { path = "${rnaCoreRelPath}" }
 
   const buildCargoPath = path.join(crateDir, 'Cargo.toml');
 
-  // Forward ALL deps from root Cargo.toml
+  // Forward ALL deps from root Cargo.toml (including target-specific)
   let rootDeps = '';
+  let targetDeps = '';
   try {
     const rootToml = fs.readFileSync(path.join(projectRoot, 'Cargo.toml'), 'utf8');
+
+    // [dependencies] section
     const depsSection = rootToml.match(/\[dependencies\]([\s\S]*?)(?:\n\[|\n*$)/);
     if (depsSection) {
       rootDeps = depsSection[1].replace(/path\s*=\s*"([^"]+)"/g, (_, p) => {
@@ -188,6 +155,18 @@ rna-core = { path = "${rnaCoreRelPath}" }
         const relPath = path.relative(crateDir, absPath);
         return `path = "${relPath}"`;
       });
+    }
+
+    // [target.'cfg(...)'.dependencies] sections — forward as-is with path rewriting
+    const targetSections = rootToml.matchAll(/(\[target\.[^\]]+\.dependencies\])([\s\S]*?)(?=\n\[|\n*$)/g);
+    for (const m of targetSections) {
+      const header = m[1];
+      const deps = m[2].replace(/path\s*=\s*"([^"]+)"/g, (_, p) => {
+        const absPath = path.resolve(projectRoot, p);
+        const relPath = path.relative(crateDir, absPath);
+        return `path = "${relPath}"`;
+      });
+      targetDeps += `\n${header}${deps}\n`;
     }
   } catch {}
 
@@ -203,7 +182,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 ${rootDeps}
-
+${targetDeps}
 [profile.dev]
 opt-level = 1
 `;
@@ -222,19 +201,20 @@ opt-level = 1
   return { crateDir, moduleId, isComponent, functions };
 }
 
-function compileRustDylib(filepath, projectRoot) {
+function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
   resolveOnce(projectRoot);
 
   const crate = ensureRustCrate(filepath, projectRoot);
   if (!crate) return null;
 
   const { crateDir, moduleId, isComponent, functions } = crate;
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs');
+  const rustTarget = target === 'simulator' ? 'aarch64-apple-ios-sim' : 'aarch64-apple-ios';
+  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const dylibPath = path.join(outputDir, `ferrum_${moduleId}.dylib`);
 
   const sharedTarget = path.join(projectRoot, '.ferrum/cargo-target');
-  const cargoOutDir = path.join(sharedTarget, 'aarch64-apple-ios/debug');
+  const cargoOutDir = path.join(sharedTarget, `${rustTarget}/debug`);
 
   const name = path.basename(filepath, '.rs');
 
@@ -245,7 +225,7 @@ function compileRustDylib(filepath, projectRoot) {
   const cmd = [
     'cargo', 'build',
     '--manifest-path', path.join(crateDir, 'Cargo.toml'),
-    '--target=aarch64-apple-ios',
+    `--target=${rustTarget}`,
     '--lib',
   ];
 
