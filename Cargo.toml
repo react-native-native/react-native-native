@@ -1,0 +1,51 @@
+[workspace]
+members = [
+    "crates/hermes-abi-rs",
+    "crates/ferrum-core",
+    "crates/ferrum-ios",
+    "crates/ferrum-android",
+    "crates/ferrum-android-ndk",
+    "crates/nativ-core",
+    "crates/nativ-macros",
+    "crates/rnn-bind-ios",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+# Default: strip = false (iOS needs symbols for crash symbolication;
+# Android's strip = true is set via target-specific override below)
+strip = false
+
+[profile.release-android]
+inherits = "release"
+strip = true
+
+[workspace.dependencies]
+# Internal crates
+hermes-abi-rs = { path = "crates/hermes-abi-rs" }
+ferrum-core = { path = "crates/ferrum-core" }
+
+# C types (size_t, uintptr_t, etc.)
+libc = "0.2"
+
+# Logging
+log = "0.4"
+
+# Error handling
+thiserror = "2"
+
+# Macro utilities
+paste = "1"
+
+# Local path overrides for development (doesn't affect published crates)
+[patch.crates-io]
+nativ-macros = { path = "crates/nativ-macros" }
+nativ-core = { path = "crates/nativ-core" }

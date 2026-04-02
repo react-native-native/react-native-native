@@ -1,4 +1,4 @@
-/// RNABindingsInstaller — installs global.__rna via TurboModuleWithJSIBindings.
+/// RNABindingsInstaller — installs global.__nativ via TurboModuleWithJSIBindings.
 /// Self-contained in rna-fabric. No dependency on expo-ferrum.
 
 #include <fbjni/fbjni.h>
@@ -12,22 +12,22 @@
 
 using namespace facebook;
 
-#define RNA_LOG(...) __android_log_print(ANDROID_LOG_INFO, "RNARuntime", __VA_ARGS__)
+#define NATIV_LOG(...) __android_log_print(ANDROID_LOG_INFO, "NativRuntime", __VA_ARGS__)
 
 // Defined in FerrumRuntime.cpp (same .so)
-extern "C" const char* ferrum_call_sync(const char*, const char*, const char*);
+extern "C" const char* nativ_call_sync(const char*, const char*, const char*);
 typedef void (*RNAAsyncFn)(const char*, void (*)(const char*), void (*)(const char*, const char*));
-extern "C" RNAAsyncFn ferrum_get_async_fn(const char*, const char*);
+extern "C" RNAAsyncFn nativ_get_async_fn(const char*, const char*);
 
 static jsi::Runtime* g_runtime = nullptr;
 static std::shared_ptr<react::CallInvoker> g_callInvoker = nullptr;
 
 static void installRNA(jsi::Runtime &rt) {
-  auto rna = jsi::Object(rt);
+  auto nativ = jsi::Object(rt);
 
-  // __rna.callSync(moduleId, fnName, argsJson) → string
+  // __nativ.callSync(moduleId, fnName, argsJson) → string
   using CallSyncFn = const char* (*)(const char*, const char*, const char*);
-  rna.setProperty(rt, "callSync", jsi::Function::createFromHostFunction(
+  nativ.setProperty(rt, "callSync", jsi::Function::createFromHostFunction(
       rt, jsi::PropNameID::forAscii(rt, "callSync"), 3,
       [](jsi::Runtime &rt, const jsi::Value &,
          const jsi::Value *args, size_t count) -> jsi::Value {
@@ -38,7 +38,7 @@ static void installRNA(jsi::Runtime &rt) {
         auto argsJson = args[2].getString(rt).utf8(rt);
 
         // Try C registry first (Rust/C++ .so modules)
-        const char* result = ferrum_call_sync(moduleId.c_str(), fnName.c_str(), argsJson.c_str());
+        const char* result = nativ_call_sync(moduleId.c_str(), fnName.c_str(), argsJson.c_str());
         if (result) return jsi::Value(rt, jsi::String::createFromUtf8(rt, result));
 
         // Fall back to Kotlin dispatch (.dex modules)
@@ -72,8 +72,8 @@ static void installRNA(jsi::Runtime &rt) {
         return jsi::Value::null();
       }));
 
-  // __rna.callAsync(moduleId, fnName, argsJson) → Promise
-  rna.setProperty(rt, "callAsync", jsi::Function::createFromHostFunction(
+  // __nativ.callAsync(moduleId, fnName, argsJson) → Promise
+  nativ.setProperty(rt, "callAsync", jsi::Function::createFromHostFunction(
       rt, jsi::PropNameID::forAscii(rt, "callAsync"), 3,
       [](jsi::Runtime &rt, const jsi::Value &,
          const jsi::Value *args, size_t count) -> jsi::Value {
@@ -83,7 +83,7 @@ static void installRNA(jsi::Runtime &rt) {
         auto fnName = args[1].getString(rt).utf8(rt);
         auto argsJson = args[2].getString(rt).utf8(rt);
 
-        auto asyncFn = ferrum_get_async_fn(moduleId.c_str(), fnName.c_str());
+        auto asyncFn = nativ_get_async_fn(moduleId.c_str(), fnName.c_str());
         if (!asyncFn) {
           throw jsi::JSError(rt, "Unknown RNA async function: " + moduleId + "::" + fnName);
         }
@@ -156,8 +156,8 @@ static void installRNA(jsi::Runtime &rt) {
         return Promise.callAsConstructor(rt, executor);
       }));
 
-  // __rna.setComponentProps(componentId, props)
-  rna.setProperty(rt, "setComponentProps", jsi::Function::createFromHostFunction(
+  // __nativ.setComponentProps(componentId, props)
+  nativ.setProperty(rt, "setComponentProps", jsi::Function::createFromHostFunction(
       rt, jsi::PropNameID::forAscii(rt, "setComponentProps"), 2,
       [](jsi::Runtime &rt, const jsi::Value &,
          const jsi::Value *args, size_t count) -> jsi::Value {
@@ -233,9 +233,9 @@ static void installRNA(jsi::Runtime &rt) {
         return jsi::Value::undefined();
       }));
 
-#ifndef FERRUM_RELEASE
-  // __rna.loadDylib(url) — dev only, downloads .so/.dex from Metro
-  rna.setProperty(rt, "loadDylib", jsi::Function::createFromHostFunction(
+#ifndef NATIV_RELEASE
+  // __nativ.loadDylib(url) — dev only, downloads .so/.dex from Metro
+  nativ.setProperty(rt, "loadDylib", jsi::Function::createFromHostFunction(
       rt, jsi::PropNameID::forAscii(rt, "loadDylib"), 1,
       [](jsi::Runtime &rt, const jsi::Value &,
          const jsi::Value *args, size_t count) -> jsi::Value {
@@ -276,7 +276,7 @@ static void installRNA(jsi::Runtime &rt) {
 
         // Write to temp file
         jclass fileClass = env->FindClass("java/io/File");
-        jstring prefix = env->NewStringUTF("rna_");
+        jstring prefix = env->NewStringUTF("nativ_");
         jstring suffix = env->NewStringUTF(isDex ? ".dex" : ".so");
         jobject tmpFile = env->CallStaticObjectMethod(fileClass,
             env->GetStaticMethodID(fileClass, "createTempFile", "(Ljava/lang/String;Ljava/lang/String;)Ljava/io/File;"),
@@ -300,7 +300,7 @@ static void installRNA(jsi::Runtime &rt) {
           auto dotDex = url.rfind(".dex");
           std::string moduleId = (lastSlash != std::string::npos && dotDex != std::string::npos)
               ? url.substr(lastSlash + 1, dotDex - lastSlash - 1) : "";
-          if (moduleId.substr(0, 7) == "ferrum_") moduleId = moduleId.substr(7);
+          if (moduleId.substr(0, 7) == "nativ_") moduleId = moduleId.substr(7);
           auto lastUs = moduleId.rfind('_');
           if (lastUs != std::string::npos && moduleId.length() - lastUs - 1 == 8) {
             moduleId = moduleId.substr(0, lastUs);
@@ -323,45 +323,45 @@ static void installRNA(jsi::Runtime &rt) {
           ok = (handle != nullptr);
           if (ok) {
             using InitFn = void (*)(void*);
-            void *rtLib = dlopen("libferrumruntime.so", RTLD_NOW | RTLD_NOLOAD);
+            void *rtLib = dlopen("libnativruntime.so", RTLD_NOW | RTLD_NOLOAD);
             if (rtLib) {
-              auto setLib = (InitFn)dlsym(handle, "rna_set_runtime_lib");
+              auto setLib = (InitFn)dlsym(handle, "nativ_set_runtime_lib");
               if (setLib) setLib(rtLib);
-              auto initFn = (InitFn)dlsym(handle, "rna_init");
+              auto initFn = (InitFn)dlsym(handle, "nativ_init");
               if (initFn) {
-                void *regFn = dlsym(rtLib, "rna_register_sync");
+                void *regFn = dlsym(rtLib, "nativ_register_sync");
                 if (regFn) initFn(regFn);
               }
-              auto renderInitFn = (InitFn)dlsym(handle, "rna_init_render");
+              auto renderInitFn = (InitFn)dlsym(handle, "nativ_init_render");
               if (renderInitFn) {
-                void *renderRegFn = dlsym(rtLib, "ferrum_register_render");
+                void *renderRegFn = dlsym(rtLib, "nativ_register_render");
                 if (renderRegFn) renderInitFn(renderRegFn);
               }
             }
           } else {
-            RNA_LOG("loadDylib: dlopen failed: %s", dlerror());
+            NATIV_LOG("loadDylib: dlopen failed: %s", dlerror());
           }
         }
 
-        RNA_LOG("loadDylib: %s → %s (%d bytes)", url.c_str(), ok ? "OK" : "FAIL", (int)len);
+        NATIV_LOG("loadDylib: %s → %s (%d bytes)", url.c_str(), ok ? "OK" : "FAIL", (int)len);
         env->PopLocalFrame(nullptr);
         return jsi::Value(ok);
       }));
-#endif // !FERRUM_RELEASE
+#endif // !NATIV_RELEASE
 
   // ABI target — used by JS shim to request correct dylib from Metro
 #if defined(__aarch64__)
-  rna.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "arm64-v8a"));
+  nativ.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "arm64-v8a"));
 #elif defined(__arm__)
-  rna.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "armeabi-v7a"));
+  nativ.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "armeabi-v7a"));
 #elif defined(__x86_64__)
-  rna.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "x86_64"));
+  nativ.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "x86_64"));
 #elif defined(__i386__)
-  rna.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "x86"));
+  nativ.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "x86"));
 #endif
 
-  rt.global().setProperty(rt, "__rna", std::move(rna));
-  RNA_LOG("global.__rna installed via TurboModuleWithJSIBindings");
+  rt.global().setProperty(rt, "__nativ", std::move(nativ));
+  NATIV_LOG("global.__nativ installed via TurboModuleWithJSIBindings");
 }
 
 // ─── JNI BindingsInstallerHolder for TurboModuleWithJSIBindings ────────

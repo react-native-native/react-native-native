@@ -2,8 +2,8 @@
  * Compiles a .rs file to a signed arm64 iOS cdylib.
  *
  * Handles two modes:
- *   - Component: file has `pub fn render(view, w, h)` → registers via ferrum_register_render
- *   - Functions: file has `#[function]` annotations → registers via rna_register_sync
+ *   - Component: file has `pub fn render(view, w, h)` → registers via nativ_register_render
+ *   - Functions: file has `#[function]` annotations → registers via nativ_register_sync
  */
 
 const { execSync } = require('child_process');
@@ -69,8 +69,8 @@ function ensureNativeDylib(projectRoot) {
   if (_nativeDylibBuilt) return;
   _nativeDylibBuilt = true;
 
-  const sharedTarget = path.join(projectRoot, '.ferrum/cargo-target');
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs');
+  const sharedTarget = path.join(projectRoot, '.nativ/cargo-target');
+  const outputDir = path.join(projectRoot, '.nativ/dylibs');
   fs.mkdirSync(outputDir, { recursive: true });
 
   console.log('[ferrum] Building native.dylib (shared deps)...');
@@ -136,7 +136,7 @@ function ensureRustCrate(filepath, projectRoot) {
   }
 
   // Per-file build crate
-  const crateDir = path.join(projectRoot, '.ferrum/build', moduleId);
+  const crateDir = path.join(projectRoot, '.nativ/build', moduleId);
   fs.mkdirSync(path.join(crateDir, 'src'), { recursive: true });
 
   const buildCargoPath = path.join(crateDir, 'Cargo.toml');
@@ -209,17 +209,17 @@ function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
 
   const { crateDir, moduleId, isComponent, functions } = crate;
   const rustTarget = target === 'simulator' ? 'aarch64-apple-ios-sim' : 'aarch64-apple-ios';
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
+  const outputDir = path.join(projectRoot, '.nativ/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
-  const dylibPath = path.join(outputDir, `ferrum_${moduleId}.dylib`);
+  const dylibPath = path.join(outputDir, `nativ_${moduleId}.dylib`);
 
-  const sharedTarget = path.join(projectRoot, '.ferrum/cargo-target');
+  const sharedTarget = path.join(projectRoot, '.nativ/cargo-target');
   const cargoOutDir = path.join(sharedTarget, `${rustTarget}/debug`);
 
   const name = path.basename(filepath, '.rs');
 
   // Force rebuild: remove the old dylib so Cargo can't skip
-  const oldDylib = path.join(cargoOutDir, `libferrum_${moduleId}.dylib`);
+  const oldDylib = path.join(cargoOutDir, `libnativ_${moduleId}.dylib`);
   try { fs.unlinkSync(oldDylib); } catch {}
 
   const cmd = [
@@ -250,7 +250,7 @@ function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
   }
 
   // Copy the built dylib from Cargo's target dir to our dylib output dir
-  const builtDylib = path.join(cargoOutDir, `libferrum_${moduleId}.dylib`);
+  const builtDylib = path.join(cargoOutDir, `libnativ_${moduleId}.dylib`);
   if (!fs.existsSync(builtDylib)) {
     console.error(`[ferrum] Built dylib not found: ${builtDylib}`);
     return null;
@@ -264,7 +264,7 @@ function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
   }
 
   const size = fs.statSync(dylibPath).size;
-  console.log(`[ferrum] Built ferrum_${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
+  console.log(`[ferrum] Built nativ_${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
   return { dylibPath, isComponent, functions };
 }
 
@@ -295,7 +295,7 @@ ${userSrc}
   // Strip #[component] attribute — it's not real Rust
   const cleanSrc = userSrc.replace(/#\[component\]\s*/g, '');
 
-  const typeImports = `use rna_core::prelude::*;`;
+  const typeImports = `use nativ_core::prelude::*;`;
 
   const inlineTypes = `
 // ─── ObjC runtime FFI ──────────────────────────────────────────────────
@@ -390,11 +390,11 @@ ${cleanSrc}
 
 // ─── Registration ──────────────────────────────────────────────────────
 unsafe extern "C" {
-    fn ferrum_register_render(id: *const c_char, f: unsafe extern "C" fn(*mut c_void, c_float, c_float));
+    fn nativ_register_render(id: *const c_char, f: unsafe extern "C" fn(*mut c_void, c_float, c_float));
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ferrum_${moduleId}_render(view: *mut c_void, w: c_float, h: c_float) {
+pub unsafe extern "C" fn nativ_${moduleId}_render(view: *mut c_void, w: c_float, h: c_float) {
     let handle = NativeViewHandle::new(view, w as f32, h as f32);
     let mut component = ${structName};
     component.mount(handle);
@@ -405,7 +405,7 @@ pub unsafe extern "C" fn ferrum_${moduleId}_render(view: *mut c_void, w: c_float
 static REGISTER: extern "C" fn() = {
     extern "C" fn register() {
         let id = CString::new("${componentId}").unwrap();
-        unsafe { ferrum_register_render(id.as_ptr(), ferrum_${moduleId}_render); }
+        unsafe { nativ_register_render(id.as_ptr(), nativ_${moduleId}_render); }
     }
     register
 };
@@ -466,7 +466,7 @@ function generateFunctionWrapper(userSrc, functions, moduleId, { unified = false
       // Async wrapper: receives resolve/reject C function pointers
       asyncParsers.push(`
 #[unsafe(no_mangle)]
-pub extern "C" fn rna_ferrum_async_${moduleId}_${fn.name}(
+pub extern "C" fn nativ_rust_async_${moduleId}_${fn.name}(
     args_json: *const c_char,
     resolve: extern "C" fn(*const c_char),
     reject: extern "C" fn(*const c_char, *const c_char),
@@ -482,10 +482,10 @@ ${argExtractions.join('\n')}
 }`);
 
       asyncRegistrations.push(
-        `        rna_register_async(
-            CString::new("ferrum.${moduleId}").unwrap().as_ptr(),
+        `        nativ_register_async(
+            CString::new("nativ.${moduleId}").unwrap().as_ptr(),
             CString::new("${fn.name}").unwrap().as_ptr(),
-            rna_ferrum_async_${moduleId}_${fn.name},
+            nativ_rust_async_${moduleId}_${fn.name},
         );`
       );
       continue;
@@ -493,7 +493,7 @@ ${argExtractions.join('\n')}
 
     argParsers.push(`
 #[unsafe(no_mangle)]
-pub extern "C" fn rna_ferrum_${moduleId}_${fn.name}(args_json: *const c_char) -> *const c_char {
+pub extern "C" fn nativ_rust_${moduleId}_${fn.name}(args_json: *const c_char) -> *const c_char {
     let args_str = unsafe { std::ffi::CStr::from_ptr(args_json).to_str().unwrap_or("[]") };
     let mut p = args_str;
     // Skip to first [
@@ -520,10 +520,10 @@ ${argExtractions.join('\n')}
 }`);
 
     registrations.push(
-      `        rna_register_sync(
-            CString::new("ferrum.${moduleId}").unwrap().as_ptr(),
+      `        nativ_register_sync(
+            CString::new("nativ.${moduleId}").unwrap().as_ptr(),
             CString::new("${fn.name}").unwrap().as_ptr(),
-            rna_ferrum_${moduleId}_${fn.name},
+            nativ_rust_${moduleId}_${fn.name},
         );`
     );
   }
@@ -584,8 +584,8 @@ type RNAAsyncFn = extern "C" fn(*const c_char, extern "C" fn(*const c_char), ext
 // On iOS: direct extern reference (resolved via -undefined dynamic_lookup)
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
-    fn rna_register_sync(module_id: *const c_char, fn_name: *const c_char, f: RNASyncFn);
-    fn rna_register_async(module_id: *const c_char, fn_name: *const c_char, f: RNAAsyncFn);
+    fn nativ_register_sync(module_id: *const c_char, fn_name: *const c_char, f: RNASyncFn);
+    fn nativ_register_async(module_id: *const c_char, fn_name: *const c_char, f: RNAAsyncFn);
 }
 
 // ─── User code ─────────────────────────────────────────────────────────
@@ -611,31 +611,31 @@ ${asyncRegistrations.join('\n')}
     register
 };
 
-// On Android dev: host calls rna_init after dlopen, passing the registry function pointer.
+// On Android dev: host calls nativ_init after dlopen, passing the registry function pointer.
 // Android linker namespaces prevent dlsym(RTLD_DEFAULT) from finding host symbols.
 #[cfg(all(target_os = "android", not(unified)))]
-static mut RNA_REGISTER_SYNC: Option<unsafe extern "C" fn(*const c_char, *const c_char, RNASyncFn)> = None;
+static mut NATIV_REGISTER_SYNC: Option<unsafe extern "C" fn(*const c_char, *const c_char, RNASyncFn)> = None;
 #[cfg(all(target_os = "android", not(unified)))]
-static mut RNA_REGISTER_ASYNC: Option<unsafe extern "C" fn(*const c_char, *const c_char, RNAAsyncFn)> = None;
+static mut NATIV_REGISTER_ASYNC: Option<unsafe extern "C" fn(*const c_char, *const c_char, RNAAsyncFn)> = None;
 
 #[cfg(all(target_os = "android", not(unified)))]
 #[unsafe(no_mangle)]
-pub extern "C" fn rna_init(reg_fn: *mut std::ffi::c_void) {
+pub extern "C" fn nativ_init(reg_fn: *mut std::ffi::c_void) {
     unsafe {
-        RNA_REGISTER_SYNC = Some(std::mem::transmute(reg_fn));
-        if let Some(reg) = RNA_REGISTER_SYNC {
-${registrations.map(r => r.replace(/rna_register_sync/g, 'reg')).join('\n')}
+        NATIV_REGISTER_SYNC = Some(std::mem::transmute(reg_fn));
+        if let Some(reg) = NATIV_REGISTER_SYNC {
+${registrations.map(r => r.replace(/nativ_register_sync/g, 'reg')).join('\n')}
         }
     }
 }
 
 #[cfg(all(target_os = "android", not(unified)))]
 #[unsafe(no_mangle)]
-pub extern "C" fn rna_init_async(reg_fn: *mut std::ffi::c_void) {
+pub extern "C" fn nativ_init_async(reg_fn: *mut std::ffi::c_void) {
     unsafe {
-        RNA_REGISTER_ASYNC = Some(std::mem::transmute(reg_fn));
-        if let Some(reg) = RNA_REGISTER_ASYNC {
-${asyncRegistrations.map(r => r.replace(/rna_register_async/g, 'reg')).join('\n')}
+        NATIV_REGISTER_ASYNC = Some(std::mem::transmute(reg_fn));
+        if let Some(reg) = NATIV_REGISTER_ASYNC {
+${asyncRegistrations.map(r => r.replace(/nativ_register_async/g, 'reg')).join('\n')}
         }
     }
 }
@@ -644,8 +644,8 @@ ${asyncRegistrations.map(r => r.replace(/rna_register_async/g, 'reg')).join('\n'
 // All code is in the same .so — symbols resolved at link time.
 #[cfg(all(target_os = "android", unified))]
 unsafe extern "C" {
-    fn rna_register_sync(module_id: *const c_char, fn_name: *const c_char, f: RNASyncFn);
-    fn rna_register_async(module_id: *const c_char, fn_name: *const c_char, f: RNAAsyncFn);
+    fn nativ_register_sync(module_id: *const c_char, fn_name: *const c_char, f: RNASyncFn);
+    fn nativ_register_async(module_id: *const c_char, fn_name: *const c_char, f: RNAAsyncFn);
 }
 
 #[cfg(all(target_os = "android", unified))]

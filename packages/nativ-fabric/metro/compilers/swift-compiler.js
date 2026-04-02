@@ -68,7 +68,7 @@ function resolveOnce(projectRoot) {
 }
 
 /**
- * Extract Swift function exports: @_cdecl functions with rna_ prefix.
+ * Extract Swift function exports: @_cdecl functions with nativ_ prefix.
  */
 function extractSwiftExports(filepath) {
   let src;
@@ -77,13 +77,13 @@ function extractSwiftExports(filepath) {
   const moduleId = path.basename(filepath, '.swift').toLowerCase();
   const exports = [];
 
-  // Match: // @rna_export or // @rna_export(sync) or // @rna_export(sync, main)
-  const pattern = /\/\/\s*@?rna_export(?:\s*\(\s*([^)]*)\s*\))?\s*\n\s*(?:@_cdecl\s*\([^)]*\)\s*\n\s*)?func\s+(\w+)\s*\(([^)]*)\)\s*(?:->\s*(\S+))?\s*\{/g;
+  // Match: // @nativ_export or // @nativ_export(sync) or // @nativ_export(sync, main)
+  const pattern = /\/\/\s*@?nativ_export(?:\s*\(\s*([^)]*)\s*\))?\s*\n\s*(?:@_cdecl\s*\([^)]*\)\s*\n\s*)?func\s+(\w+)\s*\(([^)]*)\)\s*(?:->\s*(\S+))?\s*\{/g;
   let match;
   while ((match = pattern.exec(src)) !== null) {
     const [, modeStr, name, argsStr, retType] = match;
     const flags = (modeStr || '').split(',').map(s => s.trim());
-    const cdeclName = `rna_swift_${moduleId}_${name}`;
+    const cdeclName = `nativ_swift_${moduleId}_${name}`;
 
     // Parse args (skip _ labels and UnsafePointer types from old-style exports)
     const args = argsStr.trim()
@@ -117,32 +117,32 @@ function compileSwiftDylib(filepath, projectRoot, { target = 'device' } = {}) {
 
   const name = path.basename(filepath, '.swift');
   const moduleId = name.toLowerCase();
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
+  const outputDir = path.join(projectRoot, '.nativ/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const _isComp = (() => {
-    try { return fs.readFileSync(filepath, 'utf8').includes('@rna_component'); } catch { return false; }
+    try { return fs.readFileSync(filepath, 'utf8').includes('@nativ_component'); } catch { return false; }
   })();
-  const dylibName = _isComp ? `ferrum_${moduleId}` : moduleId;
+  const dylibName = _isComp ? `nativ_${moduleId}` : moduleId;
   const dylibPath = path.join(outputDir, `${dylibName}.dylib`);
 
   // Generate Swift bridge with @_cdecl wrappers + C registration file
   const exports = extractSwiftExports(filepath);
 
-  // Check if this is a component (has @rna_component or ferrum::component)
+  // Check if this is a component (has @nativ_component or nativ::component)
   const userSrc = fs.readFileSync(filepath, 'utf8');
-  const isComponent = userSrc.includes('@rna_component') || userSrc.includes('ferrum::component');
+  const isComponent = userSrc.includes('@nativ_component') || userSrc.includes('nativ::component');
 
   if (isComponent) {
-    // Component: needs ferrum_register_render, not rna_register_sync
+    // Component: needs nativ_register_render, not nativ_register_sync
     const cBridgePath = path.join(outputDir, `${moduleId}_reg.c`);
     fs.writeFileSync(cBridgePath, `
 typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
-extern void ferrum_register_render(const char*, FerrumRenderFn);
-extern void ferrum_${moduleId}_render(void*, float, float, void*, void*);
+extern void nativ_register_render(const char*, FerrumRenderFn);
+extern void nativ_${moduleId}_render(void*, float, float, void*, void*);
 
 __attribute__((constructor))
-void rna_register_${moduleId}(void) {
-  ferrum_register_render("ferrum.${moduleId}", ferrum_${moduleId}_render);
+void nativ_register_${moduleId}(void) {
+  nativ_register_render("nativ.${moduleId}", nativ_${moduleId}_render);
 }
 `);
 
@@ -197,7 +197,7 @@ void rna_register_${moduleId}(void) {
     if (fn.mainThread) {
       return `
 @_cdecl("${fn.cdeclName}")
-func _rna_${fn.name}(_ argsJson: UnsafePointer<CChar>) -> UnsafePointer<CChar> {
+func _nativ_${fn.name}(_ argsJson: UnsafePointer<CChar>) -> UnsafePointer<CChar> {
     var ptr: UnsafePointer<CChar>!
     DispatchQueue.main.sync {
         let result = ${fn.name}(${argPassthrough})
@@ -209,7 +209,7 @@ func _rna_${fn.name}(_ argsJson: UnsafePointer<CChar>) -> UnsafePointer<CChar> {
 
     return `
 @_cdecl("${fn.cdeclName}")
-func _rna_${fn.name}(_ argsJson: UnsafePointer<CChar>) -> UnsafePointer<CChar> {
+func _nativ_${fn.name}(_ argsJson: UnsafePointer<CChar>) -> UnsafePointer<CChar> {
     let result = ${fn.name}(${argPassthrough})
     return ${resultExpr}
 }`;
@@ -220,7 +220,7 @@ func _rna_${fn.name}(_ argsJson: UnsafePointer<CChar>) -> UnsafePointer<CChar> {
   // C registration file
   const cBridgePath = path.join(outputDir, `${moduleId}_reg.c`);
   const registrations = exports.map(fn =>
-    `  rna_register_sync("${moduleId}", "${fn.name}", ${fn.cdeclName});`
+    `  nativ_register_sync("${moduleId}", "${fn.name}", ${fn.cdeclName});`
   ).join('\n');
   const declarations = exports.map(fn =>
     `extern const char* ${fn.cdeclName}(const char*);`
@@ -228,11 +228,11 @@ func _rna_${fn.name}(_ argsJson: UnsafePointer<CChar>) -> UnsafePointer<CChar> {
 
   fs.writeFileSync(cBridgePath, `
 typedef const char* (*RNASyncFn)(const char*);
-extern void rna_register_sync(const char*, const char*, RNASyncFn);
+extern void nativ_register_sync(const char*, const char*, RNASyncFn);
 ${declarations}
 
 __attribute__((constructor))
-void rna_register_${moduleId}(void) {
+void nativ_register_${moduleId}(void) {
 ${registrations}
 }
 `);

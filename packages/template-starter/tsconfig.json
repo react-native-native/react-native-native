@@ -1,0 +1,6 @@
+{
+  "compilerOptions": {
+    "rootDirs": [".", ".nativ/typings"]
+  },
+  "extends": "expo/tsconfig.base"
+}

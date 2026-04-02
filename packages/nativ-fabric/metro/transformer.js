@@ -52,31 +52,31 @@ function rustComponentShim(componentId, srcHash, libExt) {
 import React from 'react';
 import FerrumContainer from '@react-native-native/nativ-fabric/src/FerrumContainerNativeComponent';
 
-if (!global.__ferrum_loaded) global.__ferrum_loaded = {};
+if (!global.__nativ_loaded) global.__nativ_loaded = {};
 
 const ${displayName} = React.forwardRef((props, ref) => {
   const { style, children, ...nativeProps } = props;
 
   // Hot-reload: load dylib when source changes
   const hash = '${srcHash}';
-  if (global.__ferrum_loaded['${moduleId}'] !== hash) {
-    global.__ferrum_loaded['${moduleId}'] = hash;
+  if (global.__nativ_loaded['${moduleId}'] !== hash) {
+    global.__nativ_loaded['${moduleId}'] = hash;
     try {
       const { NativeModules } = require('react-native');
       const _scriptUrl = NativeModules?.SourceCode?.getConstants?.()?.scriptURL || '';
       const _host = _scriptUrl.match(/^https?:\\/\\/[^/]+/)?.[0] || '';
-      if (_host && global.__rna?.loadDylib) {
-        const _t = global.__rna.target || '';
-        global.__rna.loadDylib(_host + '/__ferrum_dylib/' + _t + '/ferrum_${moduleId}_' + hash + '.${_ext}');
+      if (_host && global.__nativ?.loadDylib) {
+        const _t = global.__nativ.target || '';
+        global.__nativ.loadDylib(_host + '/__nativ_dylib/' + _t + '/nativ_${moduleId}_' + hash + '.${_ext}');
       }
     } catch (e) {
-      if (typeof __DEV__ !== 'undefined' && __DEV__) console.log('[ferrum] dylib load:', e?.message);
+      if (typeof __DEV__ !== 'undefined' && __DEV__) console.log('[nativ] dylib load:', e?.message);
     }
   }
 
   // Store props in JSI — called on every render (React handles when to re-render)
-  if (global.__rna?.setComponentProps) {
-    global.__rna.setComponentProps('${componentId}', nativeProps);
+  if (global.__nativ?.setComponentProps) {
+    global.__nativ.setComponentProps('${componentId}', nativeProps);
   }
 
   // DEBUG: use Date.now() to guarantee unique propsJson every render
@@ -102,7 +102,7 @@ export { ${displayName} };
 
 // ─── Production shims ─────────────────────────────────────────────────
 // In release builds (dev: false), all native code is statically linked.
-// No loadDylib, no __ferrum_loaded tracking, no Metro host URL.
+// No loadDylib, no __nativ_loaded tracking, no Metro host URL.
 // Functions are already registered at app start via constructors.
 
 function cppFunctionShimProd(exports, moduleId) {
@@ -113,14 +113,14 @@ function cppFunctionShimProd(exports, moduleId) {
       lines.push(
         `export function ${fn.name}(${argNames}) {`,
         `  const argsJson = JSON.stringify([${argNames}]);`,
-        `  return global.__rna.callAsync('${moduleId}', '${fn.name}', argsJson);`,
+        `  return global.__nativ.callAsync('${moduleId}', '${fn.name}', argsJson);`,
         `}`,
       );
     } else {
       lines.push(
         `export function ${fn.name}(${argNames}) {`,
         `  const argsJson = JSON.stringify([${argNames}]);`,
-        `  const result = global.__rna.callSync('${moduleId}', '${fn.name}', argsJson);`,
+        `  const result = global.__nativ.callSync('${moduleId}', '${fn.name}', argsJson);`,
         `  return JSON.parse(result);`,
         `}`,
       );
@@ -139,8 +139,8 @@ import FerrumContainer from '@react-native-native/nativ-fabric/src/FerrumContain
 const ${displayName} = React.forwardRef((props, ref) => {
   const { style, children, ...nativeProps } = props;
 
-  if (global.__rna?.setComponentProps) {
-    global.__rna.setComponentProps('${componentId}', nativeProps);
+  if (global.__nativ?.setComponentProps) {
+    global.__nativ.setComponentProps('${componentId}', nativeProps);
   }
 
   return (
@@ -172,20 +172,20 @@ function moduleIdForFile(filename, projectRoot) {
 function cppFunctionShim(exports, moduleId, srcHash, dylibId, libExt) {
   const _dylibId = dylibId || moduleId;
   const _ext = libExt || 'dylib';
-  // Ensure @react-native-native/nativ-fabric is imported to trigger TurboModule load → installJSIBindings → global.__rna
+  // Ensure @react-native-native/nativ-fabric is imported to trigger TurboModule load → installJSIBindings → global.__nativ
   // Fast Refresh only swaps function bodies — so the hash check and dylib load
   // must be INSIDE each exported function as string literals.
-  // global.__ferrum_loaded tracks which version is loaded per module.
+  // global.__nativ_loaded tracks which version is loaded per module.
   const loadSnippet = [
-    `  if (!global.__ferrum_loaded) global.__ferrum_loaded = {};`,
-    `  if (global.__ferrum_loaded['${_dylibId}'] !== '${srcHash}') {`,
-    `    global.__ferrum_loaded['${_dylibId}'] = '${srcHash}';`,
+    `  if (!global.__nativ_loaded) global.__nativ_loaded = {};`,
+    `  if (global.__nativ_loaded['${_dylibId}'] !== '${srcHash}') {`,
+    `    global.__nativ_loaded['${_dylibId}'] = '${srcHash}';`,
     `    try {`,
     `      var _s = require('react-native').NativeModules?.SourceCode?.getConstants?.()?.scriptURL || '';`,
     `      var _h = (_s.match(/^https?:\\/\\/[^/]+/) || [''])[0];`,
-    `      var _t = global.__rna?.target || '';`,
-    `      if (_h && global.__rna?.loadDylib) {`,
-    `        global.__rna.loadDylib(_h + '/__ferrum_dylib/' + _t + '/${_dylibId}_${srcHash}.${_ext}');`,
+    `      var _t = global.__nativ?.target || '';`,
+    `      if (_h && global.__nativ?.loadDylib) {`,
+    `        global.__nativ.loadDylib(_h + '/__nativ_dylib/' + _t + '/${_dylibId}_${srcHash}.${_ext}');`,
     `      }`,
     `    } catch(e) {}`,
     `  }`,
@@ -201,7 +201,7 @@ function cppFunctionShim(exports, moduleId, srcHash, dylibId, libExt) {
         `export function ${fn.name}(${argNames}) {`,
         loadSnippet,
         `  const argsJson = JSON.stringify([${argNames}]);`,
-        `  return global.__rna.callAsync('${moduleId}', '${fn.name}', argsJson);`,
+        `  return global.__nativ.callAsync('${moduleId}', '${fn.name}', argsJson);`,
         `}`,
       );
     } else {
@@ -209,7 +209,7 @@ function cppFunctionShim(exports, moduleId, srcHash, dylibId, libExt) {
         `export function ${fn.name}(${argNames}) {`,
         loadSnippet,
         `  const argsJson = JSON.stringify([${argNames}]);`,
-        `  const result = global.__rna.callSync('${moduleId}', '${fn.name}', argsJson);`,
+        `  const result = global.__nativ.callSync('${moduleId}', '${fn.name}', argsJson);`,
         `  return JSON.parse(result);`,
         `}`,
       );
@@ -244,7 +244,7 @@ module.exports.transform = async function ferrumTransform({
   // Read last-known target (written at startup + updated by middleware on device switch)
   let buildTarget;
   try {
-    const targetFile = path.join(projectRoot, `.ferrum/${isAndroid ? 'android' : 'ios'}-target`);
+    const targetFile = path.join(projectRoot, `.nativ/${isAndroid ? 'android' : 'ios'}-target`);
     buildTarget = fs.readFileSync(targetFile, 'utf8').trim();
   } catch {}
   if (!buildTarget) buildTarget = isAndroid ? 'arm64-v8a' : 'device';
@@ -312,17 +312,17 @@ module.exports.transform = async function ferrumTransform({
   }
 
   if (isNative) {
-    console.log(`[ferrum] transform (${platform}): ${path.basename(filename)} (build #${++_buildCounter})`);
+    console.log(`[nativ] transform (${platform}): ${path.basename(filename)} (build #${++_buildCounter})`);
   }
 
   // ── .d.ts output path ────────────────────────────────────────────────
-  // Write typings to .ferrum/typings/, stripping native extension.
-  // tsconfig rootDirs: [".", ".ferrum/typings"] makes TS find them.
-  // e.g. math_utils.cpp → .ferrum/typings/math_utils.d.ts
+  // Write typings to .nativ/typings/, stripping native extension.
+  // tsconfig rootDirs: [".", ".nativ/typings"] makes TS find them.
+  // e.g. math_utils.cpp → .nativ/typings/math_utils.d.ts
   function dtsPath(sourceFile) {
     const rel = path.relative(projectRoot, sourceFile);
     const dtsRel = rel.replace(/\.(rs|cpp|cc|mm|c|swift|kt)$/, '.d.ts');
-    const out = path.join(projectRoot, '.ferrum/typings', dtsRel);
+    const out = path.join(projectRoot, '.nativ/typings', dtsRel);
     fs.mkdirSync(path.dirname(out), { recursive: true });
     return out;
   }
@@ -330,7 +330,7 @@ module.exports.transform = async function ferrumTransform({
   // ── Content-addressed compile + manifest ─────────────────────────────
   // Compiles for the last-known target (single flash hot-reload).
   // Also writes manifest so the middleware can compile on-demand for other targets.
-  const manifestPath = path.join(projectRoot, '.ferrum/modules.json');
+  const manifestPath = path.join(projectRoot, '.nativ/modules.json');
   function writeManifest(dylibName, entry) {
     let manifest = {};
     try { manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); } catch {}
@@ -342,11 +342,11 @@ module.exports.transform = async function ferrumTransform({
   function cachedCompile(srcContent, origName, ext, compileFn) {
     const hash = require('crypto').createHash('md5').update(srcContent).digest('hex').slice(0, 8);
     const hashedName = `${origName}_${hash}.${ext}`;
-    const dylibDir = path.join(projectRoot, '.ferrum/dylibs', buildTarget);
+    const dylibDir = path.join(projectRoot, '.nativ/dylibs', buildTarget);
     fs.mkdirSync(dylibDir, { recursive: true });
     const hashedPath = path.join(dylibDir, hashedName);
     if (fs.existsSync(hashedPath)) {
-      console.log(`[ferrum] ${origName} cache hit (${hash}, ${buildTarget})`);
+      console.log(`[nativ] ${origName} cache hit (${hash}, ${buildTarget})`);
       return hash;
     }
     compileFn(); // compile for last-known target
@@ -365,11 +365,11 @@ module.exports.transform = async function ferrumTransform({
     let srcHash = 'prod';
     if (isDev) {
       const libExt = isAndroid ? 'so' : 'dylib';
-      srcHash = cachedCompile(src, `ferrum_${baseName}`, libExt, () => {
+      srcHash = cachedCompile(src, `nativ_${baseName}`, libExt, () => {
         if (isAndroid) compileAndroidRustDylib(filename, projectRoot, { target: buildTarget });
         else compileRustDylib(filename, projectRoot, { target: buildTarget });
       });
-      writeManifest(`ferrum_${baseName}`, { source: filename, type: isComponent ? 'rust-component' : 'rust' });
+      writeManifest(`nativ_${baseName}`, { source: filename, type: isComponent ? 'rust-component' : 'rust' });
 
       // Generate .d.ts for TypeScript support
       try {
@@ -406,7 +406,7 @@ module.exports.transform = async function ferrumTransform({
       const moduleId = `ferrum.${baseName}`;
       const fns = functions.map(f => ({ ...f, args: f.args.map(a => ({ ...a, type: a.tsType || a.type })) }));
       shimCode = isDev
-        ? cppFunctionShim(fns, moduleId, srcHash, `ferrum_${baseName}`, _libExt)
+        ? cppFunctionShim(fns, moduleId, srcHash, `nativ_${baseName}`, _libExt)
         : cppFunctionShimProd(fns, moduleId);
     } else {
       shimCode = `// ${path.basename(filename)}: no exports found\nexport {};\n`;
@@ -425,12 +425,12 @@ module.exports.transform = async function ferrumTransform({
     const { compileSwiftDylib, extractSwiftExports } = require('./compilers/swift-compiler');
 
     const swiftSrc = fs.readFileSync(filename, 'utf8');
-    const isSwiftComponent = swiftSrc.includes('@rna_component') || swiftSrc.includes('ferrum::component');
+    const isSwiftComponent = swiftSrc.includes('@nativ_component') || swiftSrc.includes('nativ::component');
     const moduleId = path.basename(filename, '.swift').toLowerCase();
 
     let srcHash = 'prod';
     if (isDev) {
-      const origName = isSwiftComponent ? `ferrum_${moduleId}` : moduleId;
+      const origName = isSwiftComponent ? `nativ_${moduleId}` : moduleId;
       srcHash = cachedCompile(src, origName, 'dylib', () => {
         compileSwiftDylib(filename, projectRoot, { target: buildTarget });
       });
@@ -487,7 +487,7 @@ module.exports.transform = async function ferrumTransform({
       generateCompileCommands(projectRoot, _includePaths);
     }
 
-    // Check if this is a component (RNA_COMPONENT / ferrum::component)
+    // Check if this is a component (NATIV_COMPONENT / nativ::component)
     const { isCppComponent, extractCppComponentProps } = require('./extractors/cpp-ast-extractor');
     if (isCppComponent(filename)) {
       const baseName = path.basename(filename).replace(/\.(cpp|cc|mm)$/, '').toLowerCase();
@@ -497,11 +497,11 @@ module.exports.transform = async function ferrumTransform({
       if (isDev) {
         const cppProps = extractCppComponentProps(filename);
         const _cppCompLibExt = isAndroid ? 'so' : 'dylib';
-        srcHash = cachedCompile(src, `ferrum_${baseName}`, _cppCompLibExt, () => {
+        srcHash = cachedCompile(src, `nativ_${baseName}`, _cppCompLibExt, () => {
           if (isAndroid) compileAndroidCppComponentDylib(filename, _includePaths, projectRoot, baseName, cppProps, { target: buildTarget });
           else compileCppComponentDylib(filename, _includePaths, projectRoot, baseName, cppProps, { target: buildTarget });
         });
-        writeManifest(`ferrum_${baseName}`, { source: filename, type: 'cpp-component', baseName });
+        writeManifest(`nativ_${baseName}`, { source: filename, type: 'cpp-component', baseName });
 
         try {
           const displayName = path.basename(filename).replace(/\.(cpp|cc|mm)$/, '');
@@ -539,7 +539,7 @@ module.exports.transform = async function ferrumTransform({
     const exports = extractCppExports(filename, _includePaths);
 
     if (isDev && exports.length === 0) {
-      console.warn(`[ferrum] No RNA_EXPORT functions found in ${path.basename(filename)}`);
+      console.warn(`[nativ] No NATIV_EXPORT functions found in ${path.basename(filename)}`);
     }
 
     const moduleId = moduleIdForFile(filename, projectRoot);

@@ -45,7 +45,7 @@ struct PropsSnapshot {
     std::unordered_set<std::string> callbacks;
 };
 
-// Current render's props (set during tryRender, read by ferrum_jsi_get_*)
+// Current render's props (set during tryRender, read by nativ_jsi_get_*)
 static thread_local PropsSnapshot* g_currentProps = nullptr;
 static thread_local std::string g_currentComponent;
 
@@ -57,26 +57,26 @@ static thread_local jobject g_currentView = nullptr;
 
 extern "C" {
 
-void rna_register_sync(const char* moduleId, const char* fnName, RNASyncFn fn) {
+void nativ_register_sync(const char* moduleId, const char* fnName, RNASyncFn fn) {
     auto key = std::string(moduleId) + "::" + fnName;
     getSyncRegistry()[key] = fn;
     LOGI("registered sync: %s", key.c_str());
 }
 
-void rna_register_async(const char* moduleId, const char* fnName, RNAAsyncFn fn) {
+void nativ_register_async(const char* moduleId, const char* fnName, RNAAsyncFn fn) {
     auto key = std::string(moduleId) + "::" + fnName;
     getAsyncRegistry()[key] = fn;
     LOGI("registered async: %s", key.c_str());
 }
 
-void ferrum_register_render(const char* componentId, FerrumRenderFn fn) {
+void nativ_register_render(const char* componentId, FerrumRenderFn fn) {
     getRenderRegistry()[std::string(componentId)] = fn;
     LOGI("registered render: %s", componentId);
 }
 
 // ─── Props access (called by Rust/C++ render functions) ────────────────
 
-const char* ferrum_jsi_get_string(void* runtime, void* object, const char* prop_name) {
+const char* nativ_jsi_get_string(void* runtime, void* object, const char* prop_name) {
     if (!g_currentProps) return "";
     auto it = g_currentProps->strings.find(std::string(prop_name));
     if (it != g_currentProps->strings.end()) {
@@ -87,21 +87,21 @@ const char* ferrum_jsi_get_string(void* runtime, void* object, const char* prop_
     return "";
 }
 
-double ferrum_jsi_get_number(void* runtime, void* object, const char* prop_name) {
+double nativ_jsi_get_number(void* runtime, void* object, const char* prop_name) {
     if (!g_currentProps) return 0.0;
     auto it = g_currentProps->numbers.find(std::string(prop_name));
     if (it != g_currentProps->numbers.end()) return it->second;
     return 0.0;
 }
 
-int ferrum_jsi_get_bool(void* runtime, void* object, const char* prop_name) {
+int nativ_jsi_get_bool(void* runtime, void* object, const char* prop_name) {
     if (!g_currentProps) return 0;
     auto it = g_currentProps->bools.find(std::string(prop_name));
     if (it != g_currentProps->bools.end()) return it->second ? 1 : 0;
     return 0;
 }
 
-int ferrum_jsi_has_prop(void* runtime, void* object, const char* prop_name) {
+int nativ_jsi_has_prop(void* runtime, void* object, const char* prop_name) {
     if (!g_currentProps) return 0;
     std::string name(prop_name);
     return (g_currentProps->strings.count(name) ||
@@ -109,22 +109,22 @@ int ferrum_jsi_has_prop(void* runtime, void* object, const char* prop_name) {
             g_currentProps->bools.count(name)) ? 1 : 0;
 }
 
-void ferrum_jsi_call_function(void* runtime, void* object, const char* prop_name) {
+void nativ_jsi_call_function(void* runtime, void* object, const char* prop_name) {
     // TODO: callbacks via JNI → JS bridge
     LOGI("call_function('%s') — not yet implemented on Android", prop_name);
 }
 
-void ferrum_jsi_call_function_with_string(void* runtime, void* object,
+void nativ_jsi_call_function_with_string(void* runtime, void* object,
                                           const char* prop_name, const char* arg) {
     LOGI("call_function_with_string('%s') — not yet implemented on Android", prop_name);
 }
 
 // Keep view register stubs for ABI compat with iOS dylibs
-void ferrum_register_view(const char*, void*) {}
-void ferrum_unregister_view(const char*) {}
+void nativ_register_view(const char*, void*) {}
+void nativ_unregister_view(const char*) {}
 
 // Direct C dispatch — called from RNABindingsInstaller.cpp
-const char* ferrum_call_sync(const char* moduleId, const char* fnName, const char* argsJson) {
+const char* nativ_call_sync(const char* moduleId, const char* fnName, const char* argsJson) {
     auto key = std::string(moduleId) + "::" + fnName;
     auto &reg = getSyncRegistry();
     auto it = reg.find(key);
@@ -133,7 +133,7 @@ const char* ferrum_call_sync(const char* moduleId, const char* fnName, const cha
 }
 
 // Async dispatch — returns the function pointer (BindingsInstaller handles Promise + threading)
-RNAAsyncFn ferrum_get_async_fn(const char* moduleId, const char* fnName) {
+RNAAsyncFn nativ_get_async_fn(const char* moduleId, const char* fnName) {
     auto key = std::string(moduleId) + "::" + fnName;
     auto &reg = getAsyncRegistry();
     auto it = reg.find(key);
@@ -143,7 +143,7 @@ RNAAsyncFn ferrum_get_async_fn(const char* moduleId, const char* fnName) {
 
 // ─── Android view manipulation (called by Rust/C++ render functions) ──
 
-void ferrum_view_set_background_color(void* view, double r, double g, double b, double a) {
+void nativ_view_set_background_color(void* view, double r, double g, double b, double a) {
     if (!g_currentEnv) return;
     JNIEnv* env = g_currentEnv;
     jobject targetView = view ? (jobject)view : g_currentView;
@@ -158,7 +158,7 @@ void ferrum_view_set_background_color(void* view, double r, double g, double b, 
     env->DeleteLocalRef(viewClass);
 }
 
-void ferrum_view_add_label(void* parent, const char* text,
+void nativ_view_add_label(void* parent, const char* text,
                            double r, double g, double b,
                            double width, double height) {
     if (!g_currentEnv) return;
@@ -227,7 +227,7 @@ void ferrum_view_add_label(void* parent, const char* text,
     env->DeleteLocalRef(viewClass);
 }
 
-void* ferrum_view_add_subview(void* parent, double x, double y,
+void* nativ_view_add_subview(void* parent, double x, double y,
                               double w, double h,
                               double r, double g, double b, double a) {
     if (!g_currentEnv) return nullptr;
@@ -468,9 +468,9 @@ Java_com_ferrumfabric_FerrumRuntime_nativeTryRender(
     g_currentEnv = env;
     g_currentView = jView;
 
-    // Pass the view jobject as void* — render functions use ferrum_view_* APIs
+    // Pass the view jobject as void* — render functions use nativ_view_* APIs
     // which access g_currentEnv + g_currentView internally.
-    // Pass non-null sentinels for runtime/props — Android's ferrum_jsi_get_*
+    // Pass non-null sentinels for runtime/props — Android's nativ_jsi_get_*
     // functions read from g_currentProps, but Props::new() requires both non-null.
     static int runtimeSentinel = 1;
     it->second(reinterpret_cast<void*>(jView), width, height,

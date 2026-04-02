@@ -1,6 +1,6 @@
 // haptics.mm — Haptic feedback via UIKit, exported to JavaScript
 
-#import "RNAnywhere.h"
+#import "Nativ.h"
 #import <UIKit/UIKit.h>
 #include <string>
 

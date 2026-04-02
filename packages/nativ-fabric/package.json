@@ -1,0 +1,43 @@
+{
+  "name": "@react-native-native/nativ-fabric",
+  "description": "Write native code directly in your React Native project. Import like any Javascript module.",
+  "version": "0.1.0",
+  "main": "src/index.ts",
+  "codegenConfig": {
+    "name": "NativFabricSpec",
+    "type": "all",
+    "jsSrcsDir": "src"
+  },
+  "dependencies": {
+    "@expo/config-plugins": ">=9.0.0",
+    "@react-native-native/cli": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": ">=0.83"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react-native-native/react-native-native.git"
+  },
+  "keywords": [
+    "react-native",
+    "native",
+    "c++",
+    "rust",
+    "ffi",
+    "jni",
+    "ndk",
+    "objc",
+    "swift",
+    "performance",
+    "native-modules",
+    "expo"
+  ],
+  "author": "Kim Brandwijk <kim.brandwijk@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/react-native-native/react-native-native/issues"
+  },
+  "homepage": "https://react-native-native.github.io"
+}

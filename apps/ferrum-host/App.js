@@ -195,8 +195,8 @@ export default function App() {
       <Text style={styles.title}>Project Ferrum</Text>
       <Text style={styles.subtitle}>JSI vs Proxy vs FFI — μs/call</Text>
 
-      <View style={styles.ferrumBox}>
-        <Text style={styles.ferrumLabel}>FerrumContainer (Fabric)</Text>
+      <View style={styles.nativBox}>
+        <Text style={styles.nativLabel}>FerrumContainer (Fabric)</Text>
         <HelloRust
           style={{ width: "100%", height: 100 }}
           text="Props directly from JS!"
@@ -207,8 +207,8 @@ export default function App() {
       </View>
 
       {Platform.OS === "ios" && (
-        <View style={styles.ferrumBox}>
-          <Text style={styles.ferrumLabel}>
+        <View style={styles.nativBox}>
+          <Text style={styles.nativLabel}>
             ObjC++ Component (CAGradientLayer)
           </Text>
           <GradientBox
@@ -224,14 +224,14 @@ export default function App() {
         </View>
       )}
 
-      {/* <View style={styles.ferrumBox}>
-        <Text style={styles.ferrumLabel}>Rust + wgpu (Metal GPU)</Text>
+      {/* <View style={styles.nativBox}>
+        <Text style={styles.nativLabel}>Rust + wgpu (Metal GPU)</Text>
         <GpuTriangle style={{ width: "100%", height: 100 }} />
       </View> */}
 
       {Platform.OS === "ios" && (
-        <View style={styles.ferrumBox}>
-          <Text style={styles.ferrumLabel}>SwiftUI Component</Text>
+        <View style={styles.nativBox}>
+          <Text style={styles.nativLabel}>SwiftUI Component</Text>
           <SwiftCounter
             style={{
               width: "100%",
@@ -248,8 +248,8 @@ export default function App() {
       )}
 
       {Platform.OS === "android" && (
-        <View style={styles.ferrumBox}>
-          <Text style={styles.ferrumLabel}>Jetpack Compose Component</Text>
+        <View style={styles.nativBox}>
+          <Text style={styles.nativLabel}>Jetpack Compose Component</Text>
           <ComposeCard
             style={{
               width: "100%",
@@ -263,8 +263,8 @@ export default function App() {
       )}
 
       {Platform.OS === "android" && (
-        <View style={styles.ferrumBox}>
-          <Text style={styles.ferrumLabel}>
+        <View style={styles.nativBox}>
+          <Text style={styles.nativLabel}>
             Kotlin Component (Android Views)
           </Text>
           <KotlinCounter
@@ -281,8 +281,8 @@ export default function App() {
       )}
 
       {Platform.OS === "android" && (
-        <View style={styles.ferrumBox}>
-          <Text style={styles.ferrumLabel}>Kotlin functions via .dex</Text>
+        <View style={styles.nativBox}>
+          <Text style={styles.nativLabel}>Kotlin functions via .dex</Text>
           <Text style={styles.result}>
             factorial(10) = {String(factorial?.(10) ?? "N/A")}
           </Text>
@@ -296,8 +296,8 @@ export default function App() {
         </View>
       )}
 
-      <View style={styles.ferrumBox}>
-        <Text style={styles.ferrumLabel}>C++ via react-native-anywhere</Text>
+      <View style={styles.nativBox}>
+        <Text style={styles.nativLabel}>C++ via react-native-anywhere</Text>
         <Text style={styles.result}>add(2, 3) = {String(add(2, 3))}</Text>
         <Text style={styles.result}>
           fast_inv_sqrt(4) = {String(fast_inv_sqrt(4))}
@@ -306,16 +306,16 @@ export default function App() {
       </View>
 
       {Platform.OS === "ios" && (
-        <View style={styles.ferrumBox}>
-          <Text style={styles.ferrumLabel}>Swift via @_cdecl</Text>
+        <View style={styles.nativBox}>
+          <Text style={styles.nativLabel}>Swift via @_cdecl</Text>
           <Text style={styles.result}>device: {deviceName()}</Text>
           <Text style={styles.result}>os: {systemVersion()}</Text>
           <Text style={styles.result}>battery: {String(batteryLevel())}</Text>
         </View>
       )}
 
-      <View style={styles.ferrumBox}>
-        <Text style={styles.ferrumLabel}>Rust functions via #[function]</Text>
+      <View style={styles.nativBox}>
+        <Text style={styles.nativLabel}>Rust functions via #[function]</Text>
         <Text style={styles.result}>
           fibonacci(10) = {String(fibonacci(10))}
         </Text>
@@ -324,8 +324,8 @@ export default function App() {
       </View>
 
       {Platform.OS === "ios" && (
-        <View style={styles.ferrumBox}>
-          <Text style={styles.ferrumLabel}>ObjC++ — iOS platform APIs</Text>
+        <View style={styles.nativBox}>
+          <Text style={styles.nativLabel}>ObjC++ — iOS platform APIs</Text>
           <Text style={styles.result}>colorScheme: {getColorScheme()}</Text>
           <Text style={styles.result}>
             brightness: {getScreenBrightness().toFixed(2)}
@@ -336,8 +336,8 @@ export default function App() {
       )}
 
       {Platform.OS === "ios" && (
-        <View style={styles.ferrumBox}>
-          <Text style={styles.ferrumLabel}>ObjC++ — Haptic Feedback</Text>
+        <View style={styles.nativBox}>
+          <Text style={styles.nativLabel}>ObjC++ — Haptic Feedback</Text>
           <View style={{ flexDirection: "row", gap: 8 }}>
             <Pressable style={styles.resultBox} onPress={() => tapLight()}>
               <Text style={styles.result}>Light</Text>
@@ -375,8 +375,8 @@ export default function App() {
       </ScrollView> */}
 
       {/* ── Async Functions ──────────────────────────── */}
-      <View style={styles.ferrumBox}>
-        <Text style={styles.ferrumLabel}>Async Functions (ObjC++)</Text>
+      <View style={styles.nativBox}>
+        <Text style={styles.nativLabel}>Async Functions (ObjC++)</Text>
         <AsyncButton
           label="slowGreet('World')"
           onPress={() => slowGreet('World')}

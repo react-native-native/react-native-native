@@ -5,7 +5,7 @@
 #import <sys/utsname.h>
 #include <string>
 
-#include "RNAnywhere.h"
+#include "Nativ.h"
 
 RNA_EXPORT(sync, main)
 std::string getColorScheme() {

@@ -103,7 +103,7 @@ function compileDylib(filepath, includePaths, exports, projectRoot, { target = '
     .replace(/[\/\\]/g, '_')
     .replace(/[^a-zA-Z0-9_]/g, '_');
 
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
+  const outputDir = path.join(projectRoot, '.nativ/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const dylibPath = path.join(outputDir, `${moduleId}.dylib`);
 
@@ -210,8 +210,8 @@ function generateBridge(exports, moduleId) {
   lines.push('', 'extern "C" {');
   lines.push('typedef const char* (*RNASyncFn)(const char*);');
   lines.push('typedef void (*RNAAsyncFn)(const char*, void (*)(const char*), void (*)(const char*, const char*));');
-  lines.push('void rna_register_sync(const char*, const char*, RNASyncFn);');
-  lines.push('void rna_register_async(const char*, const char*, RNAAsyncFn);');
+  lines.push('void nativ_register_sync(const char*, const char*, RNASyncFn);');
+  lines.push('void nativ_register_async(const char*, const char*, RNAAsyncFn);');
   lines.push('');
 
   // JSON string escaping helper
@@ -246,7 +246,7 @@ function generateBridge(exports, moduleId) {
   for (const fn of exports) {
     if (fn.async) {
       // Async wrapper: receives argsJson + resolve/reject callbacks
-      lines.push(`static void rna_hot_async_${moduleId}_${fn.name}(const char* argsJson, void (*resolve)(const char*), void (*reject)(const char*, const char*)) {`);
+      lines.push(`static void nativ_cpp_async_${moduleId}_${fn.name}(const char* argsJson, void (*resolve)(const char*), void (*reject)(const char*, const char*)) {`);
       lines.push('  const char* p = argsJson;');
       lines.push('  while (*p && *p != \'[\') p++; if (*p == \'[\') p++;');
 
@@ -283,7 +283,7 @@ function generateBridge(exports, moduleId) {
       continue;
     }
 
-    lines.push(`static const char* rna_hot_${moduleId}_${fn.name}(const char* argsJson) {`);
+    lines.push(`static const char* nativ_cpp_${moduleId}_${fn.name}(const char* argsJson) {`);
     lines.push('  const char* p = argsJson;');
     lines.push('  while (*p && *p != \'[\') p++; if (*p == \'[\') p++;');
 
@@ -332,12 +332,12 @@ function generateBridge(exports, moduleId) {
 
   // Constructor
   lines.push('__attribute__((constructor))');
-  lines.push(`static void rna_hot_register_${moduleId}() {`);
+  lines.push(`static void nativ_cpp_register_${moduleId}() {`);
   for (const fn of exports) {
     if (fn.async) {
-      lines.push(`  rna_register_async("${moduleId}", "${fn.name}", rna_hot_async_${moduleId}_${fn.name});`);
+      lines.push(`  nativ_register_async("${moduleId}", "${fn.name}", nativ_cpp_async_${moduleId}_${fn.name});`);
     } else {
-      lines.push(`  rna_register_sync("${moduleId}", "${fn.name}", rna_hot_${moduleId}_${fn.name});`);
+      lines.push(`  nativ_register_sync("${moduleId}", "${fn.name}", nativ_cpp_${moduleId}_${fn.name});`);
     }
   }
   lines.push('}');
@@ -350,7 +350,7 @@ function generateBridge(exports, moduleId) {
 /**
  * Compile an ObjC++/C++ component file to a signed dylib.
  * The file defines a props struct + mount() function.
- * The bridge auto-generates ferrum_render that extracts props from the snapshot.
+ * The bridge auto-generates nativ_render that extracts props from the snapshot.
  */
 function compileCppComponentDylib(filepath, includePaths, projectRoot, baseName, componentProps, { target = 'device' } = {}) {
   resolveOnce(projectRoot);
@@ -358,33 +358,33 @@ function compileCppComponentDylib(filepath, includePaths, projectRoot, baseName,
   if (!sdkPath) return null;
 
   const componentId = `ferrum.${baseName}`;
-  const outputDir = path.join(projectRoot, '.ferrum/dylibs', target);
+  const outputDir = path.join(projectRoot, '.nativ/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
-  const dylibPath = path.join(outputDir, `ferrum_${baseName}.dylib`);
+  const dylibPath = path.join(outputDir, `nativ_${baseName}.dylib`);
 
-  // Find the props struct name from RNA_COMPONENT macro
+  // Find the props struct name from NATIV_COMPONENT macro
   const src = fs.readFileSync(filepath, 'utf8');
-  const compMatch = src.match(/RNA_COMPONENT\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
+  const compMatch = src.match(/NATIV_COMPONENT\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
   const propsTypeName = compMatch ? compMatch[2] : null;
 
   // Generate prop extraction code
   const propExtractions = (componentProps || []).map(p => {
     if (p.cppType === 'std::string') {
-      return `  props.${p.name} = _rna_get_string(rt, obj, "${p.jsName}", props.${p.name});`;
+      return `  props.${p.name} = _nativ_get_string(rt, obj, "${p.jsName}", props.${p.name});`;
     } else if (p.cppType === 'double' || p.cppType === 'float' || p.cppType === 'int') {
-      return `  props.${p.name} = _rna_get_number(rt, obj, "${p.jsName}", props.${p.name});`;
+      return `  props.${p.name} = _nativ_get_number(rt, obj, "${p.jsName}", props.${p.name});`;
     } else if (p.cppType === 'bool') {
-      return `  props.${p.name} = _rna_get_bool(rt, obj, "${p.jsName}", props.${p.name});`;
+      return `  props.${p.name} = _nativ_get_bool(rt, obj, "${p.jsName}", props.${p.name});`;
     } else if (p.cppType === 'std::function<void()>') {
-      return `  props.${p.name} = _rna_get_callback(rt, obj, "${p.jsName}");`;
+      return `  props.${p.name} = _nativ_get_callback(rt, obj, "${p.jsName}");`;
     }
     return `  // unknown type for ${p.name}: ${p.cppType}`;
   }).join('\n');
 
   // Generate bridge that auto-extracts props and calls mount()
-  const bridgePath = path.join(outputDir, `ferrum_${baseName}_bridge.mm`);
+  const bridgePath = path.join(outputDir, `nativ_${baseName}_bridge.mm`);
   const relPath = path.relative(outputDir, filepath);
-  const renderFnName = `ferrum_${baseName}_render`;
+  const renderFnName = `nativ_${baseName}_render`;
   const bridgeSrc = `
 // Auto-generated component bridge for ${baseName}
 #include "${relPath}"
@@ -402,12 +402,12 @@ ${propExtractions}
 
 extern "C" {
   typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
-  void ferrum_register_render(const char*, FerrumRenderFn);
+  void nativ_register_render(const char*, FerrumRenderFn);
 }
 
 __attribute__((constructor))
 static void register_${baseName}() {
-  ferrum_register_render("${componentId}", ${renderFnName});
+  nativ_register_render("${componentId}", ${renderFnName});
 }
 `;
   fs.writeFileSync(bridgePath, bridgeSrc);
@@ -467,7 +467,7 @@ static void register_${baseName}() {
   }
 
   const size = fs.statSync(dylibPath).size;
-  console.log(`[ferrum] Built ferrum_${baseName}.dylib component (${(size / 1024).toFixed(1)}KB)`);
+  console.log(`[ferrum] Built nativ_${baseName}.dylib component (${(size / 1024).toFixed(1)}KB)`);
   return dylibPath;
 }
 

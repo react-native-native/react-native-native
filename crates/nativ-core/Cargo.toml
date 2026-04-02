@@ -1,0 +1,9 @@
+[package]
+name = "nativ-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Core types for react-native-native: NativeView, NativeViewHandle, ObjC FFI"
+
+[dependencies]
+nativ-macros = "0.1"

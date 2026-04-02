@@ -1,0 +1,18 @@
+{
+  "title": "Docs",
+  "pages": [
+    "---Introduction---",
+    "index",
+    "---Getting Started---",
+    "getting-started/installation",
+    "getting-started/hello-world",
+    "getting-started/production",
+    "---Guides---",
+    "guides/rust",
+    "guides/cpp",
+    "guides/kotlin",
+    "guides/objc",
+    "---",
+    "troubleshooting"
+  ]
+}

@@ -1,7 +1,7 @@
 /**
- * Extracts RNA_EXPORT annotated functions from C++/ObjC++ files.
+ * Extracts NATIV_EXPORT annotated functions from C++/ObjC++ files.
  *
- * Uses regex to find RNA_EXPORT annotations and parse function signatures.
+ * Uses regex to find NATIV_EXPORT annotations and parse function signatures.
  * This is simpler and more portable than relying on clang's JSON AST dump
  * (which doesn't include annotation values in all versions).
  */
@@ -9,7 +9,7 @@
 const fs = require('fs');
 
 /**
- * Parse a C++/ObjC++ file and return all RNA_EXPORT-annotated function declarations.
+ * Parse a C++/ObjC++ file and return all NATIV_EXPORT-annotated function declarations.
  *
  * @param {string} filename — absolute path to .cpp/.mm file
  * @param {string[]} _includePaths — unused (kept for API compat)
@@ -18,7 +18,7 @@ const fs = require('fs');
 function isCppComponent(filename) {
   try {
     const src = fs.readFileSync(filename, 'utf8');
-    return src.includes('ferrum::component') || src.includes('FERRUM_COMPONENT') || src.includes('RNA_COMPONENT');
+    return src.includes('nativ::component') || src.includes('NATIV_COMPONENT') || src.includes('NATIV_COMPONENT');
   } catch {
     return false;
   }
@@ -34,9 +34,9 @@ function extractCppExports(filename, _includePaths) {
 
   const exports = [];
 
-  // Match: RNA_EXPORT(sync|async[, main])\n<return_type> <name>(<args>)
-  // Supports: RNA_EXPORT(sync), RNA_EXPORT(async), RNA_EXPORT(sync, main)
-  const pattern = /RNA_EXPORT\s*\(\s*([^)]+)\s*\)\s*\n\s*(.+?)\s+(\w+)\s*\(([^)]*)\)/g;
+  // Match: NATIV_EXPORT(sync|async[, main])\n<return_type> <name>(<args>)
+  // Supports: NATIV_EXPORT(sync), NATIV_EXPORT(async), NATIV_EXPORT(sync, main)
+  const pattern = /NATIV_EXPORT\s*\(\s*([^)]+)\s*\)\s*\n\s*(.+?)\s+(\w+)\s*\(([^)]*)\)/g;
 
   let match;
   while ((match = pattern.exec(src)) !== null) {
@@ -78,8 +78,8 @@ function extractCppComponentProps(filename) {
   let src;
   try { src = fs.readFileSync(filename, 'utf8'); } catch { return []; }
 
-  // Find RNA_COMPONENT(name, PropsType)
-  const compMatch = src.match(/RNA_COMPONENT\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
+  // Find NATIV_COMPONENT(name, PropsType)
+  const compMatch = src.match(/NATIV_COMPONENT\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
   if (!compMatch) return [];
 
   const propsTypeName = compMatch[2];
