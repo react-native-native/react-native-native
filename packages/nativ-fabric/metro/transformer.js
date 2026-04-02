@@ -250,8 +250,9 @@ module.exports.transform = async function ferrumTransform({
   const platform = options.platform || 'ios';
   const isAndroid = platform === 'android';
   const isDev = options.dev !== false;
-  const isNative = !filename.includes('node_modules') &&
-                   !filename.includes('/modules/') &&
+  const isNative = filename.startsWith(projectRoot) &&
+                   !filename.includes('node_modules') &&
+                   !filename.includes('/packages/') &&
                    (filename.endsWith('.rs') || filename.endsWith('.cpp') ||
                    filename.endsWith('.cc') || filename.endsWith('.mm') ||
                    filename.endsWith('.swift') || filename.endsWith('.kt'));
