@@ -199,7 +199,7 @@ function compileAndroidCppComponentDylib(filepath, includePaths, projectRoot, ba
   const clang = getNdkClang(target);
   if (!clang) return null;
 
-  const componentId = `ferrum.${baseName}`;
+  const componentId = `nativ.${baseName}`;
   const outputDir = path.join(projectRoot, '.nativ/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const soPath = path.join(outputDir, `nativ_${baseName}.so`);

@@ -128,7 +128,7 @@ object NativRuntime {
             // Check for render method (Compose component)
             try {
                 val render = clazz.getMethod("render", ViewGroup::class.java, Map::class.java)
-                val componentId = "ferrum.$moduleId"
+                val componentId = "nativ.$moduleId"
                 kotlinRenderers[componentId] = render
                 android.util.Log.i("NativRuntime", "Loaded Kotlin component: $componentId")
             } catch (_: NoSuchMethodException) {}

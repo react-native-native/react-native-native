@@ -12,7 +12,7 @@ import com.facebook.react.turbomodule.core.interfaces.TurboModuleWithJSIBindings
  * automatically when the module is first accessed from JS.
  *
  * No BindingsInstaller on MainApplication.kt needed.
- * No dependency on expo-ferrum/react-native-ferrum.
+ * No dependency on the old expo-ferrum module.
  */
 @DoNotStrip
 @ReactModule(name = NativRuntimeModule.NAME)

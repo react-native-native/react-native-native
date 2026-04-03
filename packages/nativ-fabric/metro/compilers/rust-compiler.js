@@ -203,8 +203,26 @@ function ensureRustCrate(filepath, projectRoot) {
     }
   } catch {}
 
+  // Resolve nativ-macros path for [patch.crates-io] (needed until published)
+  let patchSection = '';
+  try {
+    // Find nativ-macros relative to the build crate
+    const rootToml = fs.readFileSync(path.join(projectRoot, 'Cargo.toml'), 'utf8');
+    const nativCoreDep = rootToml.match(/nativ-core\s*=\s*\{[^}]*path\s*=\s*"([^"]+)"/);
+    if (nativCoreDep) {
+      const nativCoreAbs = path.resolve(projectRoot, nativCoreDep[1]);
+      // nativ-macros is sibling to nativ-core
+      const nativMacrosAbs = path.join(path.dirname(nativCoreAbs), 'nativ-macros');
+      if (fs.existsSync(path.join(nativMacrosAbs, 'Cargo.toml'))) {
+        const relCore = path.relative(crateDir, nativCoreAbs);
+        const relMacros = path.relative(crateDir, nativMacrosAbs);
+        patchSection = `\n[patch.crates-io]\nnativ-macros = { path = "${relMacros}" }\nnativ-core = { path = "${relCore}" }\n`;
+      }
+    }
+  } catch {}
+
   const buildCargo = `[package]
-name = "ferrum-${moduleId}"
+name = "nativ-${moduleId}"
 version = "0.1.0"
 edition = "2024"
 
@@ -216,6 +234,7 @@ crate-type = ["cdylib"]
 [dependencies]
 ${rootDeps}
 ${targetDeps}
+${patchSection}
 [profile.dev]
 opt-level = 1
 `;
@@ -313,7 +332,7 @@ function compileRustDylib(filepath, projectRoot, { target = "device" } = {}) {
 // ─── Component wrapper ─────────────────────────────────────────────────
 
 function generateComponentWrapper(userSrc, moduleId, { unified = false } = {}) {
-  const componentId = `ferrum.${moduleId}`;
+  const componentId = `nativ.${moduleId}`;
 
   // In unified mode, nativ-core is available via the crate root.
   // The #[component] proc macro handles render function generation,

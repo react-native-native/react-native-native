@@ -1,5 +1,5 @@
 /// NativBindingsInstaller — installs global.__nativ via TurboModuleWithJSIBindings.
-/// Self-contained in nativ-fabric. No dependency on expo-ferrum.
+/// Self-contained in nativ-fabric. Self-contained.
 
 #include <fbjni/fbjni.h>
 #include <jsi/jsi.h>

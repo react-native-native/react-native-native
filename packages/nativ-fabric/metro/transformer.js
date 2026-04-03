@@ -38,7 +38,7 @@ let _buildCounter = 0;
 
 function componentIdForFile(filename) {
   const name = path.basename(filename, '.rs').toLowerCase();
-  return `ferrum.${name}`;
+  return `nativ.${name}`;
 }
 
 function rustComponentShim(componentId, srcHash, libExt) {
@@ -403,7 +403,7 @@ module.exports.transform = async function ferrumTransform({
         ? rustComponentShim(componentId, srcHash, _libExt)
         : rustComponentShimProd(componentId);
     } else if (functions.length > 0) {
-      const moduleId = `ferrum.${baseName}`;
+      const moduleId = `nativ.${baseName}`;
       const fns = functions.map(f => ({ ...f, args: f.args.map(a => ({ ...a, type: a.tsType || a.type })) }));
       shimCode = isDev
         ? cppFunctionShim(fns, moduleId, srcHash, `nativ_${baseName}`, _libExt)
@@ -438,7 +438,7 @@ module.exports.transform = async function ferrumTransform({
     }
 
     if (isSwiftComponent) {
-      const componentId = `ferrum.${moduleId}`;
+      const componentId = `nativ.${moduleId}`;
       const shimCode = isDev
         ? rustComponentShim(componentId, srcHash)
         : rustComponentShimProd(componentId);
@@ -491,7 +491,7 @@ module.exports.transform = async function ferrumTransform({
     const { isCppComponent, extractCppComponentProps } = require('./extractors/cpp-ast-extractor');
     if (isCppComponent(filename)) {
       const baseName = path.basename(filename).replace(/\.(cpp|cc|mm)$/, '').toLowerCase();
-      const componentId = `ferrum.${baseName}`;
+      const componentId = `nativ.${baseName}`;
 
       let srcHash = 'prod';
       if (isDev) {
@@ -624,7 +624,7 @@ module.exports.transform = async function ferrumTransform({
 
     let shimCode;
     if (isComponent) {
-      const componentId = `ferrum.${moduleId}`;
+      const componentId = `nativ.${moduleId}`;
       shimCode = isDev
         ? rustComponentShim(componentId, srcHash, 'dex')
         : rustComponentShimProd(componentId);

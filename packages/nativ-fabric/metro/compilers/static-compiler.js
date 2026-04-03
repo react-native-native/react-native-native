@@ -102,7 +102,7 @@ function buildCppBridges() {
         .basename(filepath)
         .replace(/\.(cpp|cc|mm)$/, "")
         .toLowerCase();
-      const componentId = `ferrum.${baseName}`;
+      const componentId = `nativ.${baseName}`;
       const cppProps = extractCppComponentProps(filepath);
       const propsTypeName = (() => {
         const src = fs.readFileSync(filepath, "utf8");

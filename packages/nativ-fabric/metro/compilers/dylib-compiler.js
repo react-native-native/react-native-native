@@ -357,7 +357,7 @@ function compileCppComponentDylib(filepath, includePaths, projectRoot, baseName,
   const sdkPath = getSdkPath(target);
   if (!sdkPath) return null;
 
-  const componentId = `ferrum.${baseName}`;
+  const componentId = `nativ.${baseName}`;
   const outputDir = path.join(projectRoot, '.nativ/dylibs', target);
   fs.mkdirSync(outputDir, { recursive: true });
   const dylibPath = path.join(outputDir, `nativ_${baseName}.dylib`);

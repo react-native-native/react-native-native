@@ -497,7 +497,7 @@ static void installNativRuntime(jsi::Runtime &rt, std::shared_ptr<facebook::reac
 // ─── TurboModule with JSI bindings ─────────────────────────────────────
 // Codegen-backed TurboModule. RN calls installJSIBindingsWithRuntime:
 // when the module is first accessed → installs global.__nativ.
-// No dependency on expo-ferrum/react-native-ferrum.
+// No dependency on the old expo-ferrum module.
 
 #import <React/RCTBridgeModule.h>
 #import <ReactCommon/RCTTurboModule.h>
