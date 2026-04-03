@@ -1,0 +1,12 @@
+{
+  "name": "nativ-workspace",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "nohoist": [
+    "apps/demo-internal"
+  ],
+  "packageManager": "bun@1.3.10"
+}

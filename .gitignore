@@ -31,3 +31,6 @@ compile_commands.json
 /apps/*/ios/
 /apps/*/android/
 .claude/
+
+# Internal demo app (has its own git repo)
+/apps/demo-internal/
