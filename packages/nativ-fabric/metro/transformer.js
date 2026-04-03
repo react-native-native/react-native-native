@@ -227,10 +227,10 @@ function cppFunctionShim(exports, moduleId, srcHash, dylibId, libExt) {
 // cached shim for A, which references the correct binary (also hashed).
 const _sessionId = Date.now().toString(36);
 module.exports.getCacheKey = function () {
-  return `ferrum-transformer-${_sessionId}`;
+  return `nativ-transformer-${_sessionId}`;
 };
 
-module.exports.transform = async function ferrumTransform({
+module.exports.transform = async function nativTransform({
   filename,
   src,
   options,

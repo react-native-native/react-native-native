@@ -42,8 +42,6 @@ function detectKotlinVersion(projectRoot) {
       for (let i = 0; i < 5; i++) {
         dir = path.dirname(dir);
         results.push(path.join(dir, 'node_modules/@react-native-native/nativ-fabric/android/build.gradle'));
-        // Also check workspace link
-        results.push(path.join(dir, 'packages/nativ-fabric/android/build.gradle'));
       }
       return results;
     })(),

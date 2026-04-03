@@ -1,0 +1,12 @@
+[package]
+name = "native"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = ".nativ/lib.rs"
+
+[workspace]
+
+[dependencies]
+nativ-core = "0.1"

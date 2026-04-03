@@ -19,18 +19,12 @@ class NativContainerPackage : BaseReactPackage() {
     override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
         return when (name) {
             NativRuntimeModule.NAME -> NativRuntimeModule(reactContext)
-            NativRuntimeModule.NAME -> NativRuntimeModule(reactContext)
             else -> null
         }
     }
 
     override fun getReactModuleInfoProvider() = ReactModuleInfoProvider {
         mapOf(
-            NativRuntimeModule.NAME to ReactModuleInfo(
-                NativRuntimeModule.NAME,
-                NativRuntimeModule.NAME,
-                false, false, false, false, true
-            ),
             NativRuntimeModule.NAME to ReactModuleInfo(
                 NativRuntimeModule.NAME,
                 NativRuntimeModule.NAME,

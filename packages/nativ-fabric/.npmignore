@@ -1,0 +1,7 @@
+# Android build artifacts
+android/.cxx/
+android/build/
+android/.gradle/
+
+# iOS build artifacts
+ios/build/

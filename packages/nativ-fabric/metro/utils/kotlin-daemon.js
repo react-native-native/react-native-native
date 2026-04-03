@@ -14,7 +14,7 @@ const fs = require('fs');
 let _daemon = null;
 let _port = null;
 
-const DAEMON_PORT_FILE = '/tmp/ferrum-kotlin-daemon.port';
+const DAEMON_PORT_FILE = '/tmp/nativ-kotlin-daemon.port';
 
 /**
  * Start the Kotlin compiler daemon. Called once when Metro starts.
@@ -171,7 +171,7 @@ function compileSyncViaDaemon(request) {
   const reqJson = JSON.stringify(request);
 
   // Write request to temp file, send via nc (netcat)
-  const reqFile = `/tmp/ferrum-kt-req-${process.pid}.json`;
+  const reqFile = `/tmp/nativ-kt-req-${process.pid}.json`;
   fs.writeFileSync(reqFile, reqJson + '\n');
 
   try {

@@ -1,11 +1,34 @@
 {
   "name": "@react-native-native/cli",
+  "description": "CLI tools for React Native Native — setup, diagnostics, and build commands.",
   "version": "0.1.0",
+  "license": "MIT",
   "bin": {
     "nativ": "./bin/nativ.js"
   },
   "dependencies": {
     "citty": "^0.2.2",
     "consola": "^3.4.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react-native-native/react-native-native.git",
+    "directory": "packages/cli"
+  },
+  "keywords": [
+    "react-native",
+    "native",
+    "cli",
+    "c++",
+    "rust",
+    "swift",
+    "kotlin",
+    "hot-reload",
+    "nativ"
+  ],
+  "author": "Kim Brandwijk <kim.brandwijk@gmail.com>",
+  "homepage": "https://react-native-native.github.io",
+  "bugs": {
+    "url": "https://github.com/react-native-native/react-native-native/issues"
   }
 }
