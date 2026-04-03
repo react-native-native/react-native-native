@@ -31,11 +31,3 @@ compile_commands.json
 /apps/*/ios/
 /apps/*/android/
 .claude/
-
-# Build output (docs static site)
-out/
-_next/
-*.html
-llms*.txt
-llms.mdx/
-og/
