@@ -1,0 +1,11 @@
+{
+  "name": "@react-native-native/cli",
+  "version": "0.1.0",
+  "bin": {
+    "nativ": "./bin/nativ.js"
+  },
+  "dependencies": {
+    "citty": "^0.2.2",
+    "consola": "^3.4.2"
+  }
+}
