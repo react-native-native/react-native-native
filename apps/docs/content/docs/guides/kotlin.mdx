@@ -39,7 +39,7 @@ This command includes everything `setup-kotlin` does, so you only need to run on
 
 ## Compose components
 
-Mark a `@Composable` function with `// @rna_component`:
+Mark a `@Composable` function with `// @nativ_component`:
 
 ```kotlin title="ComposeCard.kt"
 import androidx.compose.foundation.background
@@ -58,7 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// @rna_component
+// @nativ_component
 @Composable
 fun ComposeCard(title: String) {
     var count by remember { mutableIntStateOf(0) }
@@ -99,7 +99,7 @@ import ComposeCard from './ComposeCard';
 
 ## Android View components
 
-For classic Android Views, use `// @rna_component` on a plain function:
+For classic Android Views, use `// @nativ_component` on a plain function:
 
 ```kotlin title="KotlinCounter.kt"
 import android.graphics.Color
@@ -110,7 +110,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 
-// @rna_component
+// @nativ_component
 fun KotlinCounter(parent: ViewGroup, props: Map<String, Any?>) {
     val context = parent.context
     val title = props["title"] as? String ?: "Kotlin Counter"
@@ -154,23 +154,23 @@ import KotlinCounter from './KotlinCounter';
 
 ## Functions
 
-Use `// @rna_export(sync)` to export plain Kotlin functions:
+Use `// @nativ_export(sync)` to export plain Kotlin functions:
 
 ```kotlin title="kotlin_utils.kt"
-// @rna_export(sync)
+// @nativ_export(sync)
 fun factorial(n: Int): Long {
     var result = 1L
     for (i in 2..n) result *= i
     return result
 }
 
-// @rna_export(sync)
+// @nativ_export(sync)
 fun isPalindrome(text: String): Boolean {
     val clean = text.lowercase().filter { it.isLetterOrDigit() }
     return clean == clean.reversed()
 }
 
-// @rna_export(sync)
+// @nativ_export(sync)
 fun greetKotlin(name: String): String {
     return "Hey $name, from Kotlin!"
 }
@@ -181,15 +181,15 @@ import { factorial, isPalindrome, greetKotlin } from './kotlin_utils';
 
 <Text>factorial(10) = {String(factorial?.(10))}</Text>
 <Text>isPalindrome("racecar") = {String(isPalindrome?.("racecar"))}</Text>
-<Text>{greetKotlin?.("Ferrum")}</Text>
+<Text>{greetKotlin?.("Nativ")}</Text>
 ```
 
 ### Async functions
 
-Use `// @rna_export(async)` for functions that do heavy work or I/O:
+Use `// @nativ_export(async)` for functions that do heavy work or I/O:
 
 ```kotlin title="async_utils.kt"
-// @rna_export(async)
+// @nativ_export(async)
 fun fetchUser(id: Int): String {
     // Runs on a background thread — won't block the UI
     Thread.sleep(1000)

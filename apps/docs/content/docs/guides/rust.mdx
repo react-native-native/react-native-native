@@ -34,7 +34,7 @@ jni = "0.21"
 Use the `#[component]` macro to define a native view. Props are extracted from struct fields automatically.
 
 ```rust title="HelloRust.rs"
-use rna_core::prelude::*;
+use nativ_core::prelude::*;
 
 #[component]
 pub struct HelloRust {
@@ -133,7 +133,7 @@ import { fibonacci, is_prime, greet_rust } from './rust_math';
 
 <Text>fibonacci(10) = {String(fibonacci(10))}</Text>
 <Text>is_prime(97) = {String(is_prime(97))}</Text>
-<Text>{greet_rust("Ferrum")}</Text>
+<Text>{greet_rust("Nativ")}</Text>
 ```
 
 ### Async functions

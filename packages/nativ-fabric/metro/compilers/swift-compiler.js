@@ -133,16 +133,100 @@ function compileSwiftDylib(filepath, projectRoot, { target = 'device' } = {}) {
   const isComponent = userSrc.includes('@nativ_component') || userSrc.includes('nativ::component');
 
   if (isComponent) {
-    // Component: needs nativ_register_render, not nativ_register_sync
+    // Parse the SwiftUI View struct to extract props
+    const structMatch = userSrc.match(/\/\/\s*@nativ_component\s*\n\s*struct\s+(\w+)\s*:\s*View\s*\{([\s\S]*?)var\s+body\s*:\s*some\s+View/);
+    const structName = structMatch ? structMatch[1] : name;
+    const propsBlock = structMatch ? structMatch[2] : '';
+
+    // Parse fields: let title: String, let count: Int, var opacity: Double = 1.0
+    const props = [];
+    for (const line of propsBlock.split('\n')) {
+      const m = line.trim().match(/(?:let|var)\s+(\w+)\s*:\s*(\w+)/);
+      if (m) {
+        const [, propName, propType] = m;
+        if (!['body'].includes(propName)) {
+          props.push({ name: propName, type: propType });
+        }
+      }
+    }
+
+    // Generate Swift bridge file with render function + JSI prop extraction
+    const swiftBridgePath = path.join(outputDir, `${moduleId}_bridge.swift`);
+    const renderFnName = `nativ_${moduleId}_render`;
+
+    const propExtractions = props.map(p => {
+      if (p.type === 'String') {
+        return `    let ${p.name} = String(cString: nativ_jsi_get_string(runtime, props, "${p.name}"))`;
+      } else if (p.type === 'Double' || p.type === 'Float' || p.type === 'CGFloat') {
+        return `    let ${p.name} = ${p.type}(nativ_jsi_get_number(runtime, props, "${p.name}"))`;
+      } else if (p.type === 'Int') {
+        return `    let ${p.name} = Int(nativ_jsi_get_number(runtime, props, "${p.name}"))`;
+      } else if (p.type === 'Bool') {
+        return `    let ${p.name} = nativ_jsi_has_prop(runtime, props, "${p.name}") != 0 && nativ_jsi_get_number(runtime, props, "${p.name}") != 0`;
+      } else if (p.type === 'Color') {
+        // Color is special — extract r/g/b components
+        return `    // Color prop "${p.name}" — pass r/g/b as separate props`;
+      } else {
+        return `    // TODO: unsupported prop type ${p.type} for ${p.name}`;
+      }
+    });
+
+    // Build the struct initializer args
+    const initArgs = props.map(p => {
+      if (p.type === 'Color') {
+        return `${p.name}: Color(red: nativ_jsi_get_number(runtime, props, "r"), green: nativ_jsi_get_number(runtime, props, "g"), blue: nativ_jsi_get_number(runtime, props, "b"))`;
+      }
+      return `${p.name}: ${p.name}`;
+    }).join(', ');
+
+    const bridgeSwift = `import SwiftUI
+import UIKit
+
+// Auto-generated bridge for ${structName}
+
+@_cdecl("${renderFnName}")
+func ${renderFnName}(
+    _ view: UnsafeMutableRawPointer,
+    _ width: Float, _ height: Float,
+    _ runtime: UnsafeMutableRawPointer?,
+    _ props: UnsafeMutableRawPointer?
+) {
+    let parentView = Unmanaged<UIView>.fromOpaque(view).takeUnretainedValue()
+
+    // Extract props via JSI C API
+${propExtractions.join('\n')}
+
+    let swiftUIView = ${structName}(${initArgs})
+    let hostingController = UIHostingController(rootView: swiftUIView)
+    hostingController.view.frame = CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
+    hostingController.view.backgroundColor = .clear
+
+    objc_setAssociatedObject(parentView, "nativHosting", hostingController, .OBJC_ASSOCIATION_RETAIN)
+    parentView.addSubview(hostingController.view)
+}
+
+// JSI C API — resolved at dlopen time via -undefined dynamic_lookup
+@_silgen_name("nativ_jsi_get_string")
+func nativ_jsi_get_string(_ rt: UnsafeMutableRawPointer?, _ obj: UnsafeMutableRawPointer?, _ name: UnsafePointer<CChar>) -> UnsafePointer<CChar>
+
+@_silgen_name("nativ_jsi_get_number")
+func nativ_jsi_get_number(_ rt: UnsafeMutableRawPointer?, _ obj: UnsafeMutableRawPointer?, _ name: UnsafePointer<CChar>) -> Double
+
+@_silgen_name("nativ_jsi_has_prop")
+func nativ_jsi_has_prop(_ rt: UnsafeMutableRawPointer?, _ obj: UnsafeMutableRawPointer?, _ name: UnsafePointer<CChar>) -> Int32
+`;
+    fs.writeFileSync(swiftBridgePath, bridgeSwift);
+
+    // C registration file
     const cBridgePath = path.join(outputDir, `${moduleId}_reg.c`);
     fs.writeFileSync(cBridgePath, `
-typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
-extern void nativ_register_render(const char*, FerrumRenderFn);
-extern void nativ_${moduleId}_render(void*, float, float, void*, void*);
+typedef void (*NativRenderFn)(void*, float, float, void*, void*);
+extern void nativ_register_render(const char*, NativRenderFn);
+extern void ${renderFnName}(void*, float, float, void*, void*);
 
 __attribute__((constructor))
 void nativ_register_${moduleId}(void) {
-  nativ_register_render("nativ.${moduleId}", nativ_${moduleId}_render);
+  nativ_register_render("nativ.${moduleId}", ${renderFnName});
 }
 `);
 
@@ -155,6 +239,7 @@ void nativ_register_${moduleId}(void) {
       '-Xlinker', 'dynamic_lookup',
       '-o', dylibPath,
       filepath,
+      swiftBridgePath,
       cBridgePath,
     ];
 
@@ -227,8 +312,8 @@ func _nativ_${fn.name}(_ argsJson: UnsafePointer<CChar>) -> UnsafePointer<CChar>
   ).join('\n');
 
   fs.writeFileSync(cBridgePath, `
-typedef const char* (*RNASyncFn)(const char*);
-extern void nativ_register_sync(const char*, const char*, RNASyncFn);
+typedef const char* (*NativSyncFn)(const char*);
+extern void nativ_register_sync(const char*, const char*, NativSyncFn);
 ${declarations}
 
 __attribute__((constructor))

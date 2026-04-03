@@ -1,13 +1,7 @@
 [workspace]
 members = [
-    "crates/hermes-abi-rs",
-    "crates/ferrum-core",
-    "crates/ferrum-ios",
-    "crates/ferrum-android",
-    "crates/ferrum-android-ndk",
     "crates/nativ-core",
     "crates/nativ-macros",
-    "crates/rnn-bind-ios",
 ]
 resolver = "2"
 
@@ -29,21 +23,10 @@ inherits = "release"
 strip = true
 
 [workspace.dependencies]
-# Internal crates
-hermes-abi-rs = { path = "crates/hermes-abi-rs" }
-ferrum-core = { path = "crates/ferrum-core" }
-
-# C types (size_t, uintptr_t, etc.)
-libc = "0.2"
-
-# Logging
-log = "0.4"
-
-# Error handling
-thiserror = "2"
-
 # Macro utilities
-paste = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+proc-macro2 = "1"
 
 # Local path overrides for development (doesn't affect published crates)
 [patch.crates-io]

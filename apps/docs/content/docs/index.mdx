@@ -29,11 +29,11 @@ Device does:  hot-reload → render
 Your native code becomes a React component that JS can render like any other:
 
 ```tsx
-import { FerrumContainer } from 'ferrum-fabric';
+import { NativContainer } from '@react-native-native/nativ-fabric';
 
 function App() {
   return (
-    <FerrumContainer
+    <NativContainer
       componentId="MyRustComponent"
       text="Hello from Rust!"
       style={{ width: 300, height: 200 }}

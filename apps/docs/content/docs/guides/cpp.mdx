@@ -11,18 +11,18 @@ No additional setup is required. Xcode provides `clang` for iOS compilation, and
 
 ## Functions
 
-Use `RNA_EXPORT(sync)` to annotate functions. They become importable from JS.
+Use `NATIV_EXPORT(sync)` to annotate functions. They become importable from JS.
 
 ```cpp title="math_utils.cpp"
 #include <cmath>
 #include <string>
 
-RNA_EXPORT(sync)
+NATIV_EXPORT(sync)
 int add(int a, int b) {
     return a + b;
 }
 
-RNA_EXPORT(sync)
+NATIV_EXPORT(sync)
 double fast_inv_sqrt(double x) {
     float xf = static_cast<float>(x);
     float xhalf = 0.5f * xf;
@@ -33,7 +33,7 @@ double fast_inv_sqrt(double x) {
     return static_cast<double>(xf);
 }
 
-RNA_EXPORT(sync)
+NATIV_EXPORT(sync)
 std::string greet(const std::string& name) {
     return "Yes " + name + " from C++!";
 }
@@ -46,12 +46,12 @@ import { add, fast_inv_sqrt, greet } from './math_utils';
 
 <Text>add(2, 3) = {String(add(2, 3))}</Text>
 <Text>fast_inv_sqrt(4) = {String(fast_inv_sqrt(4))}</Text>
-<Text>{greet("Ferrum")}</Text>
+<Text>{greet("Nativ")}</Text>
 ```
 
 ## Async functions
 
-Use `RNA_EXPORT(async)` for functions that do heavy work or I/O. They return a `Promise` to JS and run on a background thread automatically:
+Use `NATIV_EXPORT(async)` for functions that do heavy work or I/O. They return a `Promise` to JS and run on a background thread automatically:
 
 ```cpp title="async_demo.mm"
 #include "Nativ.h"
@@ -60,7 +60,7 @@ Use `RNA_EXPORT(async)` for functions that do heavy work or I/O. They return a `
 #include <thread>
 #include <chrono>
 
-RNA_EXPORT(async)
+NATIV_EXPORT(async)
 std::string slowGreet(const std::string& name) {
     // Runs on a background thread — won't block the UI
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -82,7 +82,7 @@ For OS APIs that are already async (network, location, etc.), the function still
 UIKit APIs must be called from the main thread. Add `main` to the annotation and the bridge handles the dispatch automatically:
 
 ```cpp
-RNA_EXPORT(sync, main)
+NATIV_EXPORT(sync, main)
 double getScreenBrightness() {
     return (double)[UIScreen mainScreen].brightness;
 }
@@ -99,7 +99,7 @@ Rename to `.mm` to use Objective-C++ and access any iOS framework:
 #import <sys/utsname.h>
 #include <string>
 
-RNA_EXPORT(sync, main)
+NATIV_EXPORT(sync, main)
 std::string getColorScheme() {
     UITraitCollection *traits = [UITraitCollection currentTraitCollection];
     switch (traits.userInterfaceStyle) {
@@ -109,12 +109,12 @@ std::string getColorScheme() {
     }
 }
 
-RNA_EXPORT(sync, main)
+NATIV_EXPORT(sync, main)
 double getScreenBrightness() {
     return (double)[UIScreen mainScreen].brightness;
 }
 
-RNA_EXPORT(sync)
+NATIV_EXPORT(sync)
 std::string getDeviceModel() {
     struct utsname systemInfo;
     uname(&systemInfo);
@@ -136,7 +136,7 @@ import { getColorScheme, getScreenBrightness, getDeviceModel } from './device_in
 #import <UIKit/UIKit.h>
 #include <string>
 
-RNA_EXPORT(sync)
+NATIV_EXPORT(sync)
 std::string tapLight() {
     UIImpactFeedbackGenerator *gen =
         [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
@@ -145,7 +145,7 @@ std::string tapLight() {
     return "light";
 }
 
-RNA_EXPORT(sync)
+NATIV_EXPORT(sync)
 std::string tapMedium() {
     UIImpactFeedbackGenerator *gen =
         [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
@@ -165,7 +165,7 @@ import { tapLight, tapMedium } from './haptics';
 
 ## Components (ObjC++)
 
-Use `RNA_COMPONENT` with a props struct for native views:
+Use `NATIV_COMPONENT` with a props struct for native views:
 
 ```objc title="GradientBox.mm"
 #import <UIKit/UIKit.h>
@@ -177,7 +177,7 @@ struct GradientBoxProps {
     double corner_radius = 12.0;
 };
 
-RNA_COMPONENT(gradientbox, GradientBoxProps)
+NATIV_COMPONENT(gradientbox, GradientBoxProps)
 
 static void mount(void* view_ptr, float width, float height, GradientBoxProps props) {
     UIView* view = (__bridge UIView*)view_ptr;

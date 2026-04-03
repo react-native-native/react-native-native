@@ -1,15 +1,8 @@
 # Rust build output
 /target/
 
-# Hermes compiled libraries (built by scripts/build-hermes.sh)
-# Submodule source is at vendor/hermes/ — tracked by git
-/vendor-lib/
-
-# Hermes build directories (inside the submodule, ignored by default)
-/vendor/hermes/build_*/
-
-# Xcode generated project (regenerate: cd crates/ferrum-ios && xcodegen generate)
-/crates/ferrum-ios/Ferrum.xcodeproj/
+# Plans and internal docs
+/plans/
 
 # Xcode derived data
 DerivedData/
@@ -18,10 +11,6 @@ DerivedData/
 .gradle/
 build/
 *.apk
-/crates/ferrum-android/android/.gradle/
-/crates/ferrum-android/android/app/build/
-/crates/ferrum-android/android/build/
-/crates/ferrum-android/android/local.properties
 
 # cargo-ndk output
 /tmp/
@@ -38,5 +27,7 @@ node_modules/
 .cache/
 cargo-target/
 .nativ/
-/apps/ferrum-host/ios/
-/apps/ferrum-host/android/
+compile_commands.json
+/apps/*/ios/
+/apps/*/android/
+.claude/

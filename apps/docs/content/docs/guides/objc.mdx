@@ -11,13 +11,13 @@ No additional setup is required. Xcode provides `swiftc` for compilation, which 
 
 ## SwiftUI components
 
-Mark a SwiftUI `View` with `// @rna_component`:
+Mark a SwiftUI `View` with `// @nativ_component`:
 
 ```swift title="SwiftCounter.swift"
 import SwiftUI
 import UIKit
 
-// @rna_component
+// @nativ_component
 struct SwiftCounterView: View {
     let title: String
     let color: Color
@@ -51,23 +51,23 @@ import SwiftCounter from './SwiftCounter';
 
 ## Functions
 
-Use `// @rna_export` to export plain Swift functions:
+Use `// @nativ_export` to export plain Swift functions:
 
 ```swift title="platform_info.swift"
 import Foundation
 import UIKit
 
-// @rna_export
+// @nativ_export
 func deviceName() -> String {
     return UIDevice.current.name
 }
 
-// @rna_export
+// @nativ_export
 func systemVersion() -> String {
     return "iOS " + UIDevice.current.systemVersion
 }
 
-// @rna_export
+// @nativ_export
 func batteryLevel() -> Float {
     UIDevice.current.isBatteryMonitoringEnabled = true
     return UIDevice.current.batteryLevel
@@ -84,12 +84,12 @@ import { deviceName, systemVersion, batteryLevel } from './platform_info';
 
 ### Async functions
 
-Use `// @rna_export(async)` for functions that do heavy work:
+Use `// @nativ_export(async)` for functions that do heavy work:
 
 ```swift title="async_utils.swift"
 import Foundation
 
-// @rna_export(async)
+// @nativ_export(async)
 func slowHello(name: String) -> String {
     Thread.sleep(forTimeInterval: 1.0)
     return "Hello \(name) from Swift (after 1s)!"
@@ -107,7 +107,7 @@ const result = await slowHello('World');
 UIKit APIs must be called from the main thread. Add `main` to the annotation:
 
 ```swift
-// @rna_export(sync, main)
+// @nativ_export(sync, main)
 func screenBrightness() -> Float {
     return Float(UIScreen.main.brightness)
 }
@@ -122,7 +122,7 @@ Any iOS framework is available — CoreLocation, AVFoundation, CoreML, ARKit, He
 ```swift
 import CoreLocation
 
-// @rna_export
+// @nativ_export
 func isLocationEnabled() -> Bool {
     return CLLocationManager.locationServicesEnabled()
 }
@@ -131,7 +131,7 @@ func isLocationEnabled() -> Bool {
 ```swift
 import AVFoundation
 
-// @rna_export
+// @nativ_export
 func audioCategory() -> String {
     return AVAudioSession.sharedInstance().category.rawValue
 }

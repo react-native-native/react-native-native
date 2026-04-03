@@ -10,7 +10,7 @@ This guide walks you through creating a native Rust component that renders on a 
 Create `native/hello.rs` in your project root:
 
 ```rust
-use rna_core::prelude::*;
+use nativ_core::prelude::*;
 
 #[component]
 pub struct HelloRust {
@@ -31,11 +31,11 @@ impl NativeView for HelloRust {
 ## 2. Use it from JavaScript
 
 ```tsx
-import { FerrumContainer } from 'ferrum-fabric';
+import { NativContainer } from '@react-native-native/nativ-fabric';
 
 export default function App() {
   return (
-    <FerrumContainer
+    <NativContainer
       componentId="HelloRust"
       text="Hello from Rust!"
       r={0.2}
