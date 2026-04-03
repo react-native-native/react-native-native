@@ -42,6 +42,11 @@ pub extern "C" fn nativ_set_runtime_lib(handle: *mut c_void) {
 
 // ─── Registration functions ───────────────────────────────────────────
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub unsafe fn nativ_register_render(_: *const c_char, _: unsafe extern "C" fn(*mut c_void, c_float, c_float, *mut c_void, *mut c_void)) {}
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub unsafe fn nativ_register_sync(_: *const c_char, _: *const c_char, _: extern "C" fn(*const c_char) -> *const c_char) {}
+
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
     pub fn nativ_register_render(
@@ -92,6 +97,21 @@ pub unsafe fn nativ_register_sync(
 }
 
 // ─── JSI value access (read props from jsi::Object) ──────────────────
+
+// Host platform stubs (macOS/Linux) — allows crate to compile for publish verification.
+// Never called at runtime; actual implementations are iOS/Android only.
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub unsafe fn nativ_jsi_get_string(_: *mut c_void, _: *mut c_void, _: *const c_char) -> *const c_char { core::ptr::null() }
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub unsafe fn nativ_jsi_get_number(_: *mut c_void, _: *mut c_void, _: *const c_char) -> c_double { 0.0 }
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub unsafe fn nativ_jsi_get_bool(_: *mut c_void, _: *mut c_void, _: *const c_char) -> c_int { 0 }
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub unsafe fn nativ_jsi_has_prop(_: *mut c_void, _: *mut c_void, _: *const c_char) -> c_int { 0 }
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub unsafe fn nativ_jsi_call_function(_: *mut c_void, _: *mut c_void, _: *const c_char) {}
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub unsafe fn nativ_jsi_call_function_with_string(_: *mut c_void, _: *mut c_void, _: *const c_char, _: *const c_char) {}
 
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
