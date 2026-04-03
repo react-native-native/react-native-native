@@ -100,7 +100,7 @@ inline std::function<void()> _nativ_get_callback(void* rt, void* obj, const char
 
 // ─── JSON helpers (for NATIV_EXPORT functions) ──────────────────────────
 
-namespace rna {
+namespace nativ {
 
 inline std::string toJson(int v)         { return std::to_string(v); }
 inline std::string toJson(int64_t v)     { return std::to_string(v); }
@@ -123,4 +123,4 @@ inline std::string toJson(const std::string& v) {
 }
 inline std::string toJson(const char* v) { return v ? toJson(std::string(v)) : "null"; }
 
-} // namespace rna
+} // namespace nativ

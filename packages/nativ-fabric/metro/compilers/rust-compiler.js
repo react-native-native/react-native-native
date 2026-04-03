@@ -6,10 +6,10 @@
  *   - Functions: file has `#[function]` annotations → registers via nativ_register_sync
  */
 
-const { execSync } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const { extractRustExports } = require('../extractors/rust-extractor');
+const { execSync } = require("child_process");
+const path = require("path");
+const fs = require("fs");
+const { extractRustExports } = require("../extractors/rust-extractor");
 
 let _signingIdentity = null;
 let _resolved = false;
@@ -21,7 +21,9 @@ function resolveOnce(projectRoot) {
   try {
     let appTeamId = null;
     try {
-      const appJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'app.json'), 'utf8'));
+      const appJson = JSON.parse(
+        fs.readFileSync(path.join(projectRoot, "app.json"), "utf8"),
+      );
       appTeamId = appJson?.expo?.ios?.appleTeamId || null;
     } catch {}
 
@@ -29,25 +31,29 @@ function resolveOnce(projectRoot) {
       try {
         const pbx = execSync(
           `find "${projectRoot}/ios" -name "project.pbxproj" -maxdepth 3 2>/dev/null`,
-          { encoding: 'utf8' }
-        ).trim().split('\n')[0];
+          { encoding: "utf8" },
+        )
+          .trim()
+          .split("\n")[0];
         if (pbx) {
-          const m = fs.readFileSync(pbx, 'utf8').match(/DEVELOPMENT_TEAM\s*=\s*(\w+)/);
+          const m = fs
+            .readFileSync(pbx, "utf8")
+            .match(/DEVELOPMENT_TEAM\s*=\s*(\w+)/);
           if (m) appTeamId = m[1];
         }
       } catch {}
     }
 
     if (appTeamId) {
-      const identities = execSync('security find-identity -v -p codesigning', {
-        encoding: 'utf8',
+      const identities = execSync("security find-identity -v -p codesigning", {
+        encoding: "utf8",
       });
       const entries = [...identities.matchAll(/([A-F0-9]{40})\s+"([^"]+)"/g)];
       for (const [, , name] of entries) {
         try {
           const subject = execSync(
             `security find-certificate -c "${name}" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null`,
-            { encoding: 'utf8' }
+            { encoding: "utf8" },
           );
           if (subject.includes(`OU=${appTeamId}`)) {
             _signingIdentity = name;
@@ -69,45 +75,61 @@ function ensureNativeDylib(projectRoot) {
   if (_nativeDylibBuilt) return;
   _nativeDylibBuilt = true;
 
-  const sharedTarget = path.join(projectRoot, '.nativ/cargo-target');
-  const outputDir = path.join(projectRoot, '.nativ/dylibs');
+  const sharedTarget = path.join(projectRoot, ".nativ/cargo-target");
+  const outputDir = path.join(projectRoot, ".nativ/dylibs");
   fs.mkdirSync(outputDir, { recursive: true });
 
-  console.log('[nativ] Building native.dylib (shared deps)...');
+  console.log("[nativ] Building native.dylib (shared deps)...");
   try {
-    execSync([
-      'cargo', 'build',
-      '--manifest-path', path.join(projectRoot, 'Cargo.toml'),
-      '--target=aarch64-apple-ios',
-      '--lib',
-    ].join(' '), {
-      stdio: 'pipe',
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        RUSTFLAGS: '-C link-arg=-undefined -C link-arg=dynamic_lookup',
-        CARGO_TARGET_DIR: sharedTarget,
+    execSync(
+      [
+        "cargo",
+        "build",
+        "--manifest-path",
+        path.join(projectRoot, "Cargo.toml"),
+        "--target=aarch64-apple-ios",
+        "--lib",
+      ].join(" "),
+      {
+        stdio: "pipe",
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          RUSTFLAGS: "-C link-arg=-undefined -C link-arg=dynamic_lookup",
+          CARGO_TARGET_DIR: sharedTarget,
+        },
       },
-    });
+    );
 
     // Copy to dylibs dir
-    const built = path.join(sharedTarget, 'aarch64-apple-ios/debug/libnative.dylib');
+    const built = path.join(
+      sharedTarget,
+      "aarch64-apple-ios/debug/libnative.dylib",
+    );
     if (fs.existsSync(built)) {
-      fs.copyFileSync(built, path.join(outputDir, 'native.dylib'));
+      fs.copyFileSync(built, path.join(outputDir, "native.dylib"));
 
       // Sign
       resolveOnce(projectRoot);
       if (_signingIdentity) {
         try {
-          execSync(`codesign -fs "${_signingIdentity}" "${path.join(outputDir, 'native.dylib')}"`, { stdio: 'pipe' });
+          execSync(
+            `codesign -fs "${_signingIdentity}" "${path.join(outputDir, "native.dylib")}"`,
+            { stdio: "pipe" },
+          );
         } catch {}
       }
 
-      const size = fs.statSync(path.join(outputDir, 'native.dylib')).size;
-      console.log(`[nativ] Built native.dylib (${(size / 1024).toFixed(1)}KB) — shared deps`);
+      const size = fs.statSync(path.join(outputDir, "native.dylib")).size;
+      console.log(
+        `[nativ] Built native.dylib (${(size / 1024).toFixed(1)}KB) — shared deps`,
+      );
     }
   } catch (err) {
-    console.error('[nativ] native.dylib build failed:', (err.stderr || '').slice(0, 1000));
+    console.error(
+      "[nativ] native.dylib build failed:",
+      (err.stderr || "").slice(0, 1000),
+    );
   }
 }
 
@@ -117,38 +139,47 @@ function ensureNativeDylib(projectRoot) {
  * Returns { crateDir, moduleId, isComponent, functions } or null if no exports.
  */
 function ensureRustCrate(filepath, projectRoot) {
-  const name = path.basename(filepath, '.rs');
+  const name = path.basename(filepath, ".rs");
   const moduleId = name.toLowerCase();
 
-  const userSrc = fs.readFileSync(filepath, 'utf8');
+  const userSrc = fs.readFileSync(filepath, "utf8");
   const { functions, isComponent } = extractRustExports(filepath);
 
   if (!isComponent && functions.length === 0) {
-    console.warn(`[nativ] ${name}.rs: no #[component] or #[function] found, skipping`);
+    console.warn(
+      `[nativ] ${name}.rs: no #[component] or #[function] found, skipping`,
+    );
     return null;
   }
 
   // The user's Cargo.toml must exist — created by `npx @react-native-native/cli setup-rust`
-  const cargoTomlPath = path.join(projectRoot, 'Cargo.toml');
+  const cargoTomlPath = path.join(projectRoot, "Cargo.toml");
   if (!fs.existsSync(cargoTomlPath)) {
-    console.error('[nativ] No Cargo.toml found. Run: npx @react-native-native/cli setup-rust');
+    console.error(
+      "[nativ] No Cargo.toml found. Run: npx @react-native-native/cli setup-rust",
+    );
     return null;
   }
 
   // Per-file build crate
-  const crateDir = path.join(projectRoot, '.nativ/build', moduleId);
-  fs.mkdirSync(path.join(crateDir, 'src'), { recursive: true });
+  const crateDir = path.join(projectRoot, ".nativ/build", moduleId);
+  fs.mkdirSync(path.join(crateDir, "src"), { recursive: true });
 
-  const buildCargoPath = path.join(crateDir, 'Cargo.toml');
+  const buildCargoPath = path.join(crateDir, "Cargo.toml");
 
   // Forward ALL deps from root Cargo.toml (including target-specific)
-  let rootDeps = '';
-  let targetDeps = '';
+  let rootDeps = "";
+  let targetDeps = "";
   try {
-    const rootToml = fs.readFileSync(path.join(projectRoot, 'Cargo.toml'), 'utf8');
+    const rootToml = fs.readFileSync(
+      path.join(projectRoot, "Cargo.toml"),
+      "utf8",
+    );
 
     // [dependencies] section
-    const depsSection = rootToml.match(/\[dependencies\]([\s\S]*?)(?:\n\[|\n*$)/);
+    const depsSection = rootToml.match(
+      /\[dependencies\]([\s\S]*?)(?:\n\[|\n*$)/,
+    );
     if (depsSection) {
       rootDeps = depsSection[1].replace(/path\s*=\s*"([^"]+)"/g, (_, p) => {
         const absPath = path.resolve(projectRoot, p);
@@ -158,7 +189,9 @@ function ensureRustCrate(filepath, projectRoot) {
     }
 
     // [target.'cfg(...)'.dependencies] sections — forward as-is with path rewriting
-    const targetSections = rootToml.matchAll(/(\[target\.[^\]]+\.dependencies\])([\s\S]*?)(?=\n\[|\n*$)/g);
+    const targetSections = rootToml.matchAll(
+      /(\[target\.[^\]]+\.dependencies\])([\s\S]*?)(?=\n\[|\n*$)/g,
+    );
     for (const m of targetSections) {
       const header = m[1];
       const deps = m[2].replace(/path\s*=\s*"([^"]+)"/g, (_, p) => {
@@ -195,47 +228,52 @@ opt-level = 1
   } else {
     libSrc = generateFunctionWrapper(userSrc, functions, moduleId);
   }
-  const libPath = path.join(crateDir, 'src/lib.rs');
+  const libPath = path.join(crateDir, "src/lib.rs");
   fs.writeFileSync(libPath, libSrc);
 
   return { crateDir, moduleId, isComponent, functions };
 }
 
-function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
+function compileRustDylib(filepath, projectRoot, { target = "device" } = {}) {
   resolveOnce(projectRoot);
 
   const crate = ensureRustCrate(filepath, projectRoot);
   if (!crate) return null;
 
   const { crateDir, moduleId, isComponent, functions } = crate;
-  const rustTarget = target === 'simulator' ? 'aarch64-apple-ios-sim' : 'aarch64-apple-ios';
-  const outputDir = path.join(projectRoot, '.nativ/dylibs', target);
+  const rustTarget =
+    target === "simulator" ? "aarch64-apple-ios-sim" : "aarch64-apple-ios";
+  const outputDir = path.join(projectRoot, ".nativ/dylibs", target);
   fs.mkdirSync(outputDir, { recursive: true });
   const dylibPath = path.join(outputDir, `nativ_${moduleId}.dylib`);
 
-  const sharedTarget = path.join(projectRoot, '.nativ/cargo-target');
+  const sharedTarget = path.join(projectRoot, ".nativ/cargo-target");
   const cargoOutDir = path.join(sharedTarget, `${rustTarget}/debug`);
 
-  const name = path.basename(filepath, '.rs');
+  const name = path.basename(filepath, ".rs");
 
   // Force rebuild: remove the old dylib so Cargo can't skip
   const oldDylib = path.join(cargoOutDir, `libnativ_${moduleId}.dylib`);
-  try { fs.unlinkSync(oldDylib); } catch {}
+  try {
+    fs.unlinkSync(oldDylib);
+  } catch {}
 
   const cmd = [
-    'cargo', 'build',
-    '--manifest-path', path.join(crateDir, 'Cargo.toml'),
+    "cargo",
+    "build",
+    "--manifest-path",
+    path.join(crateDir, "Cargo.toml"),
     `--target=${rustTarget}`,
-    '--lib',
+    "--lib",
   ];
 
-  const rustFlags = '-C link-arg=-undefined -C link-arg=dynamic_lookup';
+  const rustFlags = "-C link-arg=-undefined -C link-arg=dynamic_lookup";
 
   console.log(`[nativ] Compiling ${name}.rs via cargo...`);
   try {
-    const output = execSync(cmd.join(' '), {
-      stdio: 'pipe',
-      encoding: 'utf8',
+    const output = execSync(cmd.join(" "), {
+      stdio: "pipe",
+      encoding: "utf8",
       env: {
         ...process.env,
         RUSTFLAGS: rustFlags,
@@ -245,7 +283,7 @@ function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
     if (output) console.log(output.trim());
   } catch (err) {
     console.error(`[nativ] Rust compile failed: ${name}.rs`);
-    console.error((err.stderr || '').slice(0, 5000));
+    console.error((err.stderr || "").slice(0, 5000));
     return null;
   }
 
@@ -259,12 +297,16 @@ function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
 
   if (_signingIdentity) {
     try {
-      execSync(`codesign -fs "${_signingIdentity}" "${dylibPath}"`, { stdio: 'pipe' });
+      execSync(`codesign -fs "${_signingIdentity}" "${dylibPath}"`, {
+        stdio: "pipe",
+      });
     } catch {}
   }
 
   const size = fs.statSync(dylibPath).size;
-  console.log(`[nativ] Built nativ_${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
+  console.log(
+    `[nativ] Built nativ_${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`,
+  );
   return { dylibPath, isComponent, functions };
 }
 
@@ -273,7 +315,7 @@ function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
 function generateComponentWrapper(userSrc, moduleId, { unified = false } = {}) {
   const componentId = `ferrum.${moduleId}`;
 
-  // In unified mode, rna-core is available via the crate root.
+  // In unified mode, nativ-core is available via the crate root.
   // The #[component] proc macro handles render function generation,
   // prop extraction, and registration. Just pass through user source.
   if (unified) {
@@ -285,15 +327,15 @@ ${userSrc}
   }
 
   // ── Standalone mode (dev hot-reload) ─────────────────────────────────
-  // rna-core can't be linked into a hot-reload dylib, so all types
+  // nativ-core can't be linked into a hot-reload dylib, so all types
   // are defined inline and #[component] is stripped.
 
   // Extract struct name from #[component] pub struct Foo;
   const structMatch = userSrc.match(/#\[component\]\s*pub\s+struct\s+(\w+)/);
-  const structName = structMatch ? structMatch[1] : 'Component';
+  const structName = structMatch ? structMatch[1] : "Component";
 
   // Strip #[component] attribute — it's not real Rust
-  const cleanSrc = userSrc.replace(/#\[component\]\s*/g, '');
+  const cleanSrc = userSrc.replace(/#\[component\]\s*/g, "");
 
   const typeImports = `use nativ_core::prelude::*;`;
 
@@ -414,7 +456,12 @@ static REGISTER: extern "C" fn() = {
 
 // ─── Function wrapper ──────────────────────────────────────────────────
 
-function generateFunctionWrapper(userSrc, functions, moduleId, { unified = false } = {}) {
+function generateFunctionWrapper(
+  userSrc,
+  functions,
+  moduleId,
+  { unified = false } = {},
+) {
   const argParsers = [];
   const registrations = [];
 
@@ -425,42 +472,42 @@ function generateFunctionWrapper(userSrc, functions, moduleId, { unified = false
     // Generate a C ABI wrapper that parses JSON args and calls the Rust function
     const argExtractions = fn.args.map((arg, i) => {
       const t = arg.type;
-      if (t === 'String' || t === '&str') {
+      if (t === "String" || t === "&str") {
         return `    let ${arg.name}: String = _parse_string(&mut p);`;
-      } else if (t === 'bool') {
+      } else if (t === "bool") {
         return `    let ${arg.name}: bool = _parse_number(&mut p) != 0.0;`;
       } else {
         return `    let ${arg.name}: ${t} = _parse_number(&mut p) as ${t};`;
       }
     });
 
-    const argNames = fn.args.map(a => {
-      if (a.type === '&str') return `&${a.name}`;
+    const argNames = fn.args.map((a) => {
+      if (a.type === "&str") return `&${a.name}`;
       return a.name;
     });
 
     const retConvert = (() => {
       const rt = fn.ret;
-      if (rt === '()') return '    let _result = ';
-      if (rt.startsWith('Result<')) return '    let _result = ';
-      return '    let _result = ';
+      if (rt === "()") return "    let _result = ";
+      if (rt.startsWith("Result<")) return "    let _result = ";
+      return "    let _result = ";
     })();
 
     const retSerialize = (() => {
       const rt = fn.ret;
-      if (rt === '()' || rt === 'void') return '"null"';
-      if (rt === 'String' || rt === '&str') {
+      if (rt === "()" || rt === "void") return '"null"';
+      if (rt === "String" || rt === "&str") {
         return 'format!("\\\"{}\\\"", _result)'; // JSON string
       }
-      if (rt === 'bool') return 'if _result { "true" } else { "false" }';
-      if (rt.startsWith('Result<')) {
+      if (rt === "bool") return 'if _result { "true" } else { "false" }';
+      if (rt.startsWith("Result<")) {
         // Unwrap the Result
         return null; // handled specially below
       }
-      return '_result.to_string()'; // numbers
+      return "_result.to_string()"; // numbers
     })();
 
-    const isResult = fn.ret.startsWith('Result<');
+    const isResult = fn.ret.startsWith("Result<");
 
     if (fn.async) {
       // Async wrapper: receives resolve/reject C function pointers
@@ -474,8 +521,8 @@ pub extern "C" fn nativ_rust_async_${moduleId}_${fn.name}(
     let args_str = unsafe { std::ffi::CStr::from_ptr(args_json).to_str().unwrap_or("[]") };
     let mut p = args_str;
     if let Some(i) = p.find('[') { p = &p[i+1..]; }
-${argExtractions.join('\n')}
-    let _result = ${fn.name}(${argNames.join(', ')});
+${argExtractions.join("\n")}
+    let _result = ${fn.name}(${argNames.join(", ")});
     let json = serde_like_serialize(&_result);
     let c = CString::new(json).unwrap();
     resolve(c.as_ptr());
@@ -486,7 +533,7 @@ ${argExtractions.join('\n')}
             CString::new("nativ.${moduleId}").unwrap().as_ptr(),
             CString::new("${fn.name}").unwrap().as_ptr(),
             nativ_rust_async_${moduleId}_${fn.name},
-        );`
+        );`,
       );
       continue;
     }
@@ -498,9 +545,11 @@ pub extern "C" fn nativ_rust_${moduleId}_${fn.name}(args_json: *const c_char) ->
     let mut p = args_str;
     // Skip to first [
     if let Some(i) = p.find('[') { p = &p[i+1..]; }
-${argExtractions.join('\n')}
-    let _result = ${fn.name}(${argNames.join(', ')});
-    ${isResult ? `
+${argExtractions.join("\n")}
+    let _result = ${fn.name}(${argNames.join(", ")});
+    ${
+      isResult
+        ? `
     match _result {
         Ok(v) => {
             let json = format!("{}", serde_like_serialize(&v));
@@ -512,7 +561,8 @@ ${argExtractions.join('\n')}
             let c = CString::new(json).unwrap();
             c.into_raw()
         }
-    }` : `
+    }`
+        : `
     let json = serde_like_serialize(&_result);
     let c = CString::new(json).unwrap();
     c.into_raw()`
@@ -524,7 +574,7 @@ ${argExtractions.join('\n')}
             CString::new("nativ.${moduleId}").unwrap().as_ptr(),
             CString::new("${fn.name}").unwrap().as_ptr(),
             nativ_rust_${moduleId}_${fn.name},
-        );`
+        );`,
     );
   }
 
@@ -589,11 +639,11 @@ unsafe extern "C" {
 }
 
 // ─── User code ─────────────────────────────────────────────────────────
-${userSrc.replace(/#\[function[^\]]*\]/g, '')}
+${userSrc.replace(/#\[function[^\]]*\]/g, "")}
 
 // ─── C ABI wrappers ───────────────────────────────────────────────────
-${argParsers.join('\n')}
-${asyncParsers.join('\n')}
+${argParsers.join("\n")}
+${asyncParsers.join("\n")}
 
 // ─── Registration ──────────────────────────────────────────────────────
 
@@ -604,8 +654,8 @@ ${asyncParsers.join('\n')}
 static REGISTER: extern "C" fn() = {
     extern "C" fn register() {
         unsafe {
-${registrations.join('\n')}
-${asyncRegistrations.join('\n')}
+${registrations.join("\n")}
+${asyncRegistrations.join("\n")}
         }
     }
     register
@@ -624,7 +674,7 @@ pub extern "C" fn nativ_init(reg_fn: *mut std::ffi::c_void) {
     unsafe {
         NATIV_REGISTER_SYNC = Some(std::mem::transmute(reg_fn));
         if let Some(reg) = NATIV_REGISTER_SYNC {
-${registrations.map(r => r.replace(/nativ_register_sync/g, 'reg')).join('\n')}
+${registrations.map((r) => r.replace(/nativ_register_sync/g, "reg")).join("\n")}
         }
     }
 }
@@ -635,7 +685,7 @@ pub extern "C" fn nativ_init_async(reg_fn: *mut std::ffi::c_void) {
     unsafe {
         NATIV_REGISTER_ASYNC = Some(std::mem::transmute(reg_fn));
         if let Some(reg) = NATIV_REGISTER_ASYNC {
-${asyncRegistrations.map(r => r.replace(/nativ_register_async/g, 'reg')).join('\n')}
+${asyncRegistrations.map((r) => r.replace(/nativ_register_async/g, "reg")).join("\n")}
         }
     }
 }
@@ -654,8 +704,8 @@ unsafe extern "C" {
 static REGISTER_ANDROID: extern "C" fn() = {
     extern "C" fn register() {
         unsafe {
-${registrations.join('\n')}
-${asyncRegistrations.join('\n')}
+${registrations.join("\n")}
+${asyncRegistrations.join("\n")}
         }
     }
     register
@@ -663,4 +713,9 @@ ${asyncRegistrations.join('\n')}
 `;
 }
 
-module.exports = { compileRustDylib, ensureRustCrate, generateFunctionWrapper, generateComponentWrapper };
+module.exports = {
+  compileRustDylib,
+  ensureRustCrate,
+  generateFunctionWrapper,
+  generateComponentWrapper,
+};

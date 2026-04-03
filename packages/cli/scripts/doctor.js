@@ -198,6 +198,8 @@ if (hasCargoToml) {
     if (cargo.includes('nativ-core')) ok('nativ-core dependency');
     else fail('nativ-core not in Cargo.toml', 'Run: npx nativ setup rust');
   } catch {}
+  if (fs.existsSync(path.join(projectRoot, '.nativ/lib.rs'))) ok('.nativ/lib.rs');
+  else fail('.nativ/lib.rs missing', 'Run: npx nativ setup rust');
 } else {
   skip('No Cargo.toml — run setup-rust to get started');
 }

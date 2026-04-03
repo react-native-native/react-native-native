@@ -51,8 +51,8 @@ function getIncludePaths(projectRoot) {
   }
 
   // 5. Nativ.h — lives in this package's metro/ directory
-  const rnaHeaderDir = path.resolve(__dirname, '..');
-  paths.push(`-I${rnaHeaderDir}`);
+  const nativHeaderDir = path.resolve(__dirname, '..');
+  paths.push(`-I${nativHeaderDir}`);
 
   // 6. User source directories
   for (const dir of ['src', 'cpp', 'ios', 'include']) {

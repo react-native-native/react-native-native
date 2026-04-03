@@ -54,14 +54,14 @@ function generateCompileCommands(projectRoot, includePaths) {
       const lang = isObjCpp ? 'objective-c++' : isC ? 'c' : 'c++';
 
       // Include the package's metro/ dir for Nativ.h
-      const rnaHeaderDir = path.resolve(__dirname, '..');
+      const nativHeaderDir = path.resolve(__dirname, '..');
 
       const args = [
         'clang++',
         '-x', lang,
         '-std=c++17',
         '-arch', 'arm64',
-        '-I' + rnaHeaderDir,
+        '-I' + nativHeaderDir,
       ];
 
       // ObjC++ files need the iOS SDK sysroot for UIKit/Foundation headers.

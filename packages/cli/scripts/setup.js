@@ -49,7 +49,15 @@ async function main() {
   }
 
   if (languages.includes('compose')) {
-    consola.start('Setting up Kotlin + Compose...');
+    // Kotlin version detection must run first — compose reads from nativ.config.json
+    consola.start('Setting up Kotlin...');
+    try {
+      execSync(`node ${path.join(scriptsDir, 'setup-kotlin.js')}`, {
+        stdio: 'inherit',
+        cwd: process.cwd(),
+      });
+    } catch {}
+    consola.start('Setting up Compose...');
     try {
       execSync(`node ${path.join(scriptsDir, 'setup-compose.js')}`, {
         stdio: 'inherit',

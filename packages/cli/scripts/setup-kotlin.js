@@ -32,7 +32,31 @@ function detectKotlinVersion(projectRoot) {
     }
   } catch {}
 
-  // 2. expo-modules-core → default Kotlin version for this SDK
+  // 2. nativ-fabric build.gradle → the version the package actually uses
+  const nativFabricPaths = [
+    path.join(projectRoot, 'node_modules/@react-native-native/nativ-fabric/android/build.gradle'),
+    // Hoisted in monorepo
+    ...(() => {
+      const results = [];
+      let dir = projectRoot;
+      for (let i = 0; i < 5; i++) {
+        dir = path.dirname(dir);
+        results.push(path.join(dir, 'node_modules/@react-native-native/nativ-fabric/android/build.gradle'));
+        // Also check workspace link
+        results.push(path.join(dir, 'packages/nativ-fabric/android/build.gradle'));
+      }
+      return results;
+    })(),
+  ];
+  for (const p of nativFabricPaths) {
+    try {
+      const content = fs.readFileSync(p, 'utf8');
+      const m = content.match(/kotlinVersion\s*:\s*"([^"]+)"/);
+      if (m) return { version: m[1], source: 'nativ-fabric' };
+    } catch {}
+  }
+
+  // 3. expo-modules-core → default Kotlin version for this SDK
   const expoCorePaths = [
     path.join(projectRoot, 'node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle'),
     // Hoisted in monorepo

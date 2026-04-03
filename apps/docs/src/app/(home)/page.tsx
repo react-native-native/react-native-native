@@ -5,7 +5,7 @@ const languages = [
   {
     name: 'Rust',
     icon: '🦀',
-    snippet: `use rna_core::prelude::*;
+    snippet: `use nativ_core::prelude::*;
 
 #[component]
 pub struct HelloRust {
@@ -65,7 +65,7 @@ std::string getColorScheme() {
   {
     name: 'Kotlin / Compose',
     icon: '🟣',
-    snippet: `// @rna_component
+    snippet: `// @nativ_component
 @Composable
 fun ComposeCard(title: String) {
     var count by remember { mutableIntStateOf(0) }
@@ -87,7 +87,7 @@ fun ComposeCard(title: String) {
     icon: '🍎',
     snippet: `import SwiftUI
 
-// @rna_component
+// @nativ_component
 struct SwiftCounterView: View {
     let title: String
     let color: Color

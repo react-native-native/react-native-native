@@ -237,7 +237,7 @@ static void installNativRuntime(jsi::Runtime &rt, std::shared_ptr<facebook::reac
         auto &reg = getRegistry();
         auto it = reg.find(key);
         if (it == reg.end() || !it->second.syncFn) {
-          throw jsi::JSError(rt, "Unknown RNA function: " + key);
+          throw jsi::JSError(rt, "Unknown Nativ function: " + key);
         }
 
         const char* result = it->second.syncFn(argsJson.c_str());
@@ -268,7 +268,7 @@ static void installNativRuntime(jsi::Runtime &rt, std::shared_ptr<facebook::reac
         auto &reg = getRegistry();
         auto it = reg.find(key);
         if (it == reg.end() || !it->second.asyncFn) {
-          throw jsi::JSError(rt, "Unknown RNA async function: " + key);
+          throw jsi::JSError(rt, "Unknown Nativ async function: " + key);
         }
 
         auto asyncFn = it->second.asyncFn;
@@ -489,7 +489,7 @@ static void installNativRuntime(jsi::Runtime &rt, std::shared_ptr<facebook::reac
   nativObj.setProperty(rt, "target", jsi::String::createFromUtf8(rt, "device"));
 #endif
 
-  rt.global().setProperty(rt, "__nativ", std::move(rnaObj));
+  rt.global().setProperty(rt, "__nativ", std::move(nativObj));
   g_runtime = &rt;  // Store for render function prop access
   NSLog(@"[Nativ] __nativ installed with %lu registered functions", (unsigned long)getRegistry().size());
 }

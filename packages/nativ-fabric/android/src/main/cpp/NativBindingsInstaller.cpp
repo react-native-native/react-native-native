@@ -1,5 +1,5 @@
 /// NativBindingsInstaller — installs global.__nativ via TurboModuleWithJSIBindings.
-/// Self-contained in rna-fabric. No dependency on expo-ferrum.
+/// Self-contained in nativ-fabric. No dependency on expo-ferrum.
 
 #include <fbjni/fbjni.h>
 #include <jsi/jsi.h>
@@ -22,7 +22,7 @@ extern "C" NativAsyncFn nativ_get_async_fn(const char*, const char*);
 static jsi::Runtime* g_runtime = nullptr;
 static std::shared_ptr<react::CallInvoker> g_callInvoker = nullptr;
 
-static void installRNA(jsi::Runtime &rt) {
+static void installNativ(jsi::Runtime &rt) {
   auto nativ = jsi::Object(rt);
 
   // __nativ.callSync(moduleId, fnName, argsJson) → string
@@ -85,7 +85,7 @@ static void installRNA(jsi::Runtime &rt) {
 
         auto asyncFn = nativ_get_async_fn(moduleId.c_str(), fnName.c_str());
         if (!asyncFn) {
-          throw jsi::JSError(rt, "Unknown RNA async function: " + moduleId + "::" + fnName);
+          throw jsi::JSError(rt, "Unknown Nativ async function: " + moduleId + "::" + fnName);
         }
 
         auto Promise = rt.global().getPropertyAsFunction(rt, "Promise");
@@ -381,7 +381,7 @@ struct NativRuntimeJSIBindings : public jni::JavaClass<NativRuntimeJSIBindings> 
         [](jsi::Runtime &runtime, const std::shared_ptr<react::CallInvoker> &callInvoker) {
           g_callInvoker = callInvoker;
           g_runtime = &runtime;
-          installRNA(runtime);
+          installNativ(runtime);
         });
   }
 };

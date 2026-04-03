@@ -153,15 +153,15 @@ nativ-core = { path = "${relPath}" }
 `;
     fs.writeFileSync(cargoTomlPath, cargoToml);
     console.log(`✓ Created Cargo.toml (nativ-core → ${relPath})`);
+  }
 
-    // Cargo requires at least one target — create a hidden stub
-    const libRsPath = path.join(projectRoot, '.nativ/lib.rs');
-    if (!fs.existsSync(libRsPath)) {
-      fs.mkdirSync(path.join(projectRoot, '.nativ'), { recursive: true });
-      fs.writeFileSync(libRsPath,
-        '// Stub for rust-analyzer and `cargo add`. Do not edit.\n');
-      console.log('✓ Created .nativ/lib.rs (stub for cargo/rust-analyzer)');
-    }
+  // Always ensure .nativ/lib.rs exists (Cargo requires a lib target)
+  const libRsPath = path.join(projectRoot, '.nativ/lib.rs');
+  if (!fs.existsSync(libRsPath)) {
+    fs.mkdirSync(path.join(projectRoot, '.nativ'), { recursive: true });
+    fs.writeFileSync(libRsPath,
+      '// Stub for rust-analyzer and `cargo add`. Do not edit.\n');
+    console.log('✓ Created .nativ/lib.rs');
   }
 
   console.log('\nDone. Rust hot-reload is ready.');

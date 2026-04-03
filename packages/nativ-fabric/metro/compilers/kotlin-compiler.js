@@ -255,7 +255,7 @@ function compileKotlinDex(filepath, projectRoot) {
   // Content-addressed cache: each source hash gets its own .dex
   // Reverts (A→B→A) are instant — the .dex for A is already on disk.
   const srcHash = require('crypto').createHash('md5').update(fs.readFileSync(filepath)).digest('hex').slice(0, 8);
-  const className = `RnaModule_${moduleId}`;
+  const className = `NativModule_${moduleId}`;
   const dexBase = isComponent ? `nativ_${moduleId}` : moduleId;
   const dexName = `${dexBase}_${srcHash}.dex`;
   const dexPath = path.join(outputDir, dexName);

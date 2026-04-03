@@ -23,7 +23,7 @@ void nativ_${safeModuleId}_${fn.name}(
 ) {
     try {
         auto result = ${fn.name}(/* TODO: parse args from argsJson */);
-        auto json = rna::toJson(result);
+        auto json = nativ::toJson(result);
         resolve(json.c_str());
     } catch (const std::exception& e) {
         reject("NATIV_ERROR", e.what());
@@ -36,7 +36,7 @@ void nativ_${safeModuleId}_${fn.name}(
 const char* nativ_${safeModuleId}_${fn.name}(const char* argsJson) {
     auto result = ${fn.name}(/* TODO: parse args from argsJson */);
     static thread_local std::string buf;
-    buf = rna::toJson(result);
+    buf = nativ::toJson(result);
     return buf.c_str();
 }`);
     }

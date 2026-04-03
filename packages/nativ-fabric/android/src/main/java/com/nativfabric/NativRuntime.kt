@@ -88,7 +88,7 @@ object NativRuntime {
 
     /**
      * Load a .dex file and register its module for dispatch.
-     * The .dex must contain a class com.nativfabric.generated.RnaModule_<moduleId>
+     * The .dex must contain a class com.nativfabric.generated.NativModule_<moduleId>
      * with a static dispatch(String, String): String method.
      */
     fun loadDex(dexPath: String, moduleId: String): Boolean {
@@ -115,7 +115,7 @@ object NativRuntime {
                 ctx.classLoader
             )
 
-            val className = "com.nativfabric.generated.RnaModule_$moduleId"
+            val className = "com.nativfabric.generated.NativModule_$moduleId"
             val clazz = loader.loadClass(className)
 
             // Check for dispatch method (function module)

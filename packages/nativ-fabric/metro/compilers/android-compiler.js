@@ -111,7 +111,7 @@ function generateAndroidBridge(exports, moduleId) {
     '// Registry C API — resolved via dlsym (Android namespace isolation)',
     'extern "C" {',
     'typedef const char* (*NativSyncFn)(const char*);',
-    'typedef void (*RNARegisterSyncFn)(const char*, const char*, NativSyncFn);',
+    'typedef void (*NativRegisterSyncFn)(const char*, const char*, NativSyncFn);',
     '}',
     '',
     '// JSON parse helpers',
@@ -176,10 +176,10 @@ function generateAndroidBridge(exports, moduleId) {
 
   // Init function — called by host after dlopen with the registry function pointer.
   // Android linker namespaces prevent dlsym(RTLD_DEFAULT) from finding host symbols.
-  lines.push(`static RNARegisterSyncFn _nativ_reg = nullptr;`);
+  lines.push(`static NativRegisterSyncFn _nativ_reg = nullptr;`);
   lines.push('');
   lines.push(`void nativ_init(void* reg_fn) {`);
-  lines.push('  _nativ_reg = (RNARegisterSyncFn)reg_fn;');
+  lines.push('  _nativ_reg = (NativRegisterSyncFn)reg_fn;');
   for (const fn of exports) {
     if (!fn.async) {
       lines.push(`  if (_nativ_reg) _nativ_reg("${moduleId}", "${fn.name}", nativ_android_${moduleId}_${fn.name});`);
