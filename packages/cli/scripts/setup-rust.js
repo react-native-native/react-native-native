@@ -5,7 +5,7 @@
  *
  * - Verifies Rust is installed (rustc + cargo)
  * - Adds iOS and Android cross-compilation targets
- * - Creates Cargo.toml with nativ-core dependency (path until crates.io publish)
+ * - Creates Cargo.toml with nativ-core dependency from crates.io
  *
  * Run: npx @react-native-native/cli setup-rust
  */
@@ -18,42 +18,6 @@ function run(cmd) {
   try {
     return execSync(cmd, { encoding: 'utf8', stdio: 'pipe' }).trim();
   } catch { return null; }
-}
-
-function findRnaCore(projectRoot) {
-  // 1. node_modules (direct install)
-  const nmPath = path.join(projectRoot, 'node_modules/@react-native-native/nativ-fabric/crates/nativ-core');
-  if (fs.existsSync(path.join(nmPath, 'Cargo.toml'))) return nmPath;
-
-  // 2. Hoisted node_modules (monorepo)
-  let dir = projectRoot;
-  for (let i = 0; i < 5; i++) {
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    const hoisted = path.join(parent, 'node_modules/@react-native-native/nativ-fabric/crates/nativ-core');
-    if (fs.existsSync(path.join(hoisted, 'Cargo.toml'))) return hoisted;
-    dir = parent;
-  }
-
-  // 3. Cargo workspace (dev monorepo — crates/nativ-core next to workspace root)
-  dir = projectRoot;
-  for (let i = 0; i < 5; i++) {
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    const cargoPath = path.join(parent, 'Cargo.toml');
-    if (fs.existsSync(cargoPath)) {
-      try {
-        const content = fs.readFileSync(cargoPath, 'utf8');
-        if (content.includes('[workspace]') && content.includes('nativ-core')) {
-          const rnaCoreDir = path.join(parent, 'crates/nativ-core');
-          if (fs.existsSync(path.join(rnaCoreDir, 'Cargo.toml'))) return rnaCoreDir;
-        }
-      } catch {}
-    }
-    dir = parent;
-  }
-
-  return null;
 }
 
 async function main() {
@@ -113,25 +77,10 @@ async function main() {
     // Verify nativ-core dependency is present
     const content = fs.readFileSync(cargoTomlPath, 'utf8');
     if (!content.includes('nativ-core')) {
-      console.warn('⚠ Cargo.toml is missing nativ-core dependency. Add it:');
-      const rnaCoreDir = findRnaCore(projectRoot);
-      if (rnaCoreDir) {
-        const relPath = path.relative(projectRoot, rnaCoreDir).replace(/\\/g, '/');
-        console.warn(`  nativ-core = { path = "${relPath}" }`);
-      } else {
-        console.warn('  nativ-core = "0.1"  # when published to crates.io');
-      }
+      console.warn('⚠ Cargo.toml is missing nativ-core dependency. Add:');
+      console.warn('  nativ-core = "0.1"');
     }
   } else {
-    const rnaCoreDir = findRnaCore(projectRoot);
-    if (!rnaCoreDir) {
-      console.error('✗ Could not find nativ-core crate.');
-      console.error('  Is @react-native-native/nativ-fabric installed?');
-      process.exit(1);
-    }
-
-    const relPath = path.relative(projectRoot, rnaCoreDir).replace(/\\/g, '/');
-
     const cargoToml = `[package]
 name = "native"
 version = "0.1.0"
@@ -143,7 +92,7 @@ path = ".nativ/lib.rs"
 [workspace]
 
 [dependencies]
-nativ-core = { path = "${relPath}" }
+nativ-core = "0.1"
 
 # iOS-only dependencies — e.g. objc2
 # [target.'cfg(target_os = "ios")'.dependencies]
@@ -152,7 +101,7 @@ nativ-core = { path = "${relPath}" }
 # [target.'cfg(target_os = "android")'.dependencies]
 `;
     fs.writeFileSync(cargoTomlPath, cargoToml);
-    console.log(`✓ Created Cargo.toml (nativ-core → ${relPath})`);
+    console.log('✓ Created Cargo.toml (nativ-core = "0.1")');
   }
 
   // Always ensure .nativ/lib.rs exists (Cargo requires a lib target)

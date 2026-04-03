@@ -742,32 +742,6 @@ function buildRustStatic() {
     }
   } catch {}
 
-  // Resolve patch for nativ-macros
-  let patchSection = "";
-  try {
-    const rootToml = fs.readFileSync(
-      path.join(projectRoot, "Cargo.toml"),
-      "utf8",
-    );
-    const nativCoreDep = rootToml.match(
-      /nativ-core\s*=\s*\{[^}]*path\s*=\s*"([^"]+)"/,
-    );
-    if (nativCoreDep) {
-      const nativCoreAbs = path.resolve(projectRoot, nativCoreDep[1]);
-      const nativMacrosAbs = path.join(
-        path.dirname(nativCoreAbs),
-        "nativ-macros",
-      );
-      if (fs.existsSync(path.join(nativMacrosAbs, "Cargo.toml"))) {
-        const relCore = path.relative(unifiedDir, nativCoreAbs);
-        const relMacros = path.relative(unifiedDir, nativMacrosAbs);
-        patchSection = `\n[patch.crates-io]\nnativ-macros = { path = "${relMacros}" }\nnativ-core = { path = "${relCore}" }\n`;
-        console.log(`[nativ] Rust patch: nativ-core → ${relCore}`);
-        console.log(`[nativ] Rust patch: nativ-macros → ${relMacros}`);
-      }
-    }
-  } catch {}
-
   fs.writeFileSync(
     path.join(unifiedDir, "Cargo.toml"),
     `[package]
@@ -782,7 +756,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ${rootDeps}
-${patchSection}
+
 [profile.release]
 opt-level = "z"
 lto = true
