@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 description = "Proc macros for react-native-native: #[component] and #[function]"
+repository = "https://github.com/react-native-native/react-native-native"
+homepage = "https://react-native-native.github.io"
 
 [lib]
 proc-macro = true

@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 description = "Core types for react-native-native: NativeView, NativeViewHandle, ObjC FFI"
+repository = "https://github.com/react-native-native/react-native-native"
+homepage = "https://react-native-native.github.io"
 
 [dependencies]
 nativ-macros = "0.1"

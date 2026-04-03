@@ -20,27 +20,55 @@ React Native's native module system requires you to write Swift/Kotlin wrappers,
 
 ## How it works
 
-```
-You write:    .rs / .cpp / .kt / .swift file
-Metro does:   compile → code-sign → serve
-Device does:  hot-reload → render
-```
-
-Your native code becomes a React component that JS can render like any other:
+Your native code becomes a React component or module that JS can use like any other:
 
 ```tsx
-import { NativContainer } from '@react-native-native/nativ-fabric';
+import { fibonacci } from './rust_math';    // Rust function
+import GradientBox from './GradientBox';    // ObjC++ component
 
-function App() {
-  return (
-    <NativContainer
-      componentId="MyRustComponent"
-      text="Hello from Rust!"
-      style={{ width: 300, height: 200 }}
-    />
-  );
-}
+<Text>{fibonacci(10)}</Text>
+<GradientBox title="Hello!" style={{ width: 300, height: 200 }} />
 ```
+
+### Development
+
+Metro watches your native files alongside JavaScript. When you save a `.cpp`, `.rs`, `.swift`, or `.kt` file:
+
+1. **Metro compiles** it to a signed dynamic library (`.dylib` on iOS, `.dex` on Android)
+2. **Device pulls** the compiled library over HTTP — same as a JS bundle refresh
+3. **Runtime loads** it via `dlopen` (iOS) or `DexClassLoader` (Android)
+4. **Hot-reload** — your changes appear on device in seconds, no full rebuild
+
+```
+Save .cpp → Metro compiles → device loads .dylib → hot-reload
+```
+
+This works on both simulators and physical devices. Metro auto-detects the target architecture and compiles accordingly.
+
+### Production
+
+In release builds, all native code is statically linked into the app binary. No dynamic libraries, no runtime code loading.
+
+**iOS** — A CocoaPods script phase runs before compilation:
+1. Scans your project for native files (`.cpp`, `.mm`, `.swift`, `.rs`)
+2. Generates combined bridge files — one `.mm` for all C++/ObjC++ bridges, one `.swift` for all Swift bridges
+3. Compiles Rust into a single static library (`libnativ_user.a`)
+4. Xcode compiles and links everything into the app binary
+
+**Android** — A Gradle pre-build task does the same:
+1. Generates per-module bridge files and Kotlin wrappers
+2. Compiles Rust for all ABIs (arm64, armv7, x86_64, x86)
+3. Gradle compiles and packages everything into the APK
+
+Metro only bundles JavaScript in production — all native code is handled by the platform build system.
+
+```bash
+# Build for release — native compilation is automatic
+npx expo run:ios --configuration Release
+npx expo run:android --variant release
+```
+
+See [Production Builds](/docs/getting-started/production) for details on EAS Build and CI setup.
 
 ## Known issues
 

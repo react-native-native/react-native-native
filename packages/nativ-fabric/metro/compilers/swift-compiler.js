@@ -164,8 +164,12 @@ function compileSwiftDylib(filepath, projectRoot, { target = 'device' } = {}) {
       } else if (p.type === 'Bool') {
         return `    let ${p.name} = nativ_jsi_has_prop(runtime, props, "${p.name}") != 0 && nativ_jsi_get_number(runtime, props, "${p.name}") != 0`;
       } else if (p.type === 'Color') {
-        // Color is special — extract r/g/b components
-        return `    // Color prop "${p.name}" — pass r/g/b as separate props`;
+        return `    let ${p.name}: Color = {
+        let hex = String(cString: nativ_jsi_get_string(runtime, props, "${p.name}"))
+        let scanner = Scanner(string: hex.hasPrefix("#") ? String(hex.dropFirst()) : hex)
+        var rgb: UInt64 = 0; scanner.scanHexInt64(&rgb)
+        return Color(red: Double((rgb >> 16) & 0xFF) / 255, green: Double((rgb >> 8) & 0xFF) / 255, blue: Double(rgb & 0xFF) / 255)
+    }()`;
       } else {
         return `    // TODO: unsupported prop type ${p.type} for ${p.name}`;
       }

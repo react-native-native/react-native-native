@@ -13,14 +13,14 @@
 // The bridge dispatches this to a background thread automatically.
 // Just write a normal function — it won't block the JS thread.
 
-RNA_EXPORT(async)
+NATIV_EXPORT(async)
 std::string slowGreet(const std::string& name) {
     // Simulate heavy work (1 second)
     std::this_thread::sleep_for(std::chrono::seconds(1));
     return "Hello " + name + " (after 1s delay)!";
 }
 
-RNA_EXPORT(async)
+NATIV_EXPORT(async)
 int heavyCompute(int n) {
     // Compute-bound: calculate fibonacci the slow way
     if (n <= 1) return n;
@@ -36,7 +36,7 @@ int heavyCompute(int n) {
 
 // ── Pattern 2: OS API with completion handler ─────────────────────────
 // For APIs that are already async (network, location, etc.),
-// use RNA_EXPORT_ASYNC_RAW — you get resolve/reject callbacks directly.
+// use NATIV_EXPORT_ASYNC_RAW — you get resolve/reject callbacks directly.
 // Call resolve(jsonString) or reject(code, message) when done.
 //
 // NOTE: This pattern is for APIs where YOU control when to resolve.
@@ -44,7 +44,7 @@ int heavyCompute(int n) {
 // on whatever thread the OS callback fires on.
 
 // Example: fetch a URL using NSURLSession (fully async, no thread blocking)
-RNA_EXPORT(async)
+NATIV_EXPORT(async)
 std::string fetchURL(const std::string& url) {
     // This runs on a background thread (dispatched by the bridge).
     // We use a synchronous semaphore to wait for NSURLSession's async callback.

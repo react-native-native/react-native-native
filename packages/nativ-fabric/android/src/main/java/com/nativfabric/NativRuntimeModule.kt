@@ -5,6 +5,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.turbomodule.core.interfaces.BindingsInstallerHolder
 import com.facebook.react.turbomodule.core.interfaces.TurboModuleWithJSIBindings
+import com.facebook.fbreact.specs.NativeNativRuntimeSpec
 
 /**
  * TurboModule that installs global.__nativ JSI bindings when loaded.

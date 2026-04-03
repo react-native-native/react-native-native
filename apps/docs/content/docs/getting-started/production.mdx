@@ -9,9 +9,10 @@ During development, native code hot-reloads via `dlopen` (iOS) and `DexClassLoad
 
 When you build for release, React Native Native:
 
-1. **Compiles** all your native files (`.rs`, `.cpp`, `.mm`, `.kt`, `.swift`) ahead of time
-2. **Statically links** them into the app binary — no `.dylib` or `.dex` files shipped
-3. **Metro bundles JS only** — native code is handled by CocoaPods (iOS) and Gradle (Android)
+1. **Scans** your project for native files (`.rs`, `.cpp`, `.mm`, `.swift`, `.kt`)
+2. **Generates bridges** — the glue code that registers your functions and components with the runtime
+3. **Compiles** Rust into a static library
+4. **Links statically** — Xcode/Gradle compile the bridges and link everything into the app binary
 
 ```bash
 # iOS release build
@@ -21,7 +22,9 @@ npx expo run:ios --configuration Release
 npx expo run:android --variant release
 ```
 
-## What changes vs development
+No extra steps — the native compilers are invoked automatically by CocoaPods (iOS) and Gradle (Android) as part of the normal build.
+
+## Development vs production
 
 | | Development | Production |
 |---|---|---|
@@ -29,11 +32,31 @@ npx expo run:android --variant release
 | **Hot-reload** | Yes | No |
 | **Code signing** | Ad-hoc per `.dylib` | App-level signing |
 | **Metro serves native** | Yes (`.dylib` / `.dex` over HTTP) | No (JS bundle only) |
-| **Performance** | Same | Same |
+| **Build system** | Metro compiles on save | CocoaPods / Gradle at build time |
 
-## Local builds
+## iOS build pipeline
 
-For local builds, everything is automatic. CocoaPods and Gradle invoke the native compilers as part of the normal build — no extra steps needed.
+The Expo config plugin sets up a CocoaPods pod (`ReactNativeNativeUserCode`) with a `:before_compile` script phase. On Release builds, this script:
+
+1. Generates `nativ_bridges.mm` — combined C++/ObjC++ bridges with constructor-based registration
+2. Generates `nativ_bridges.swift` — combined Swift source with `@_cdecl` wrappers
+3. Compiles Rust into `libnativ_user.a` — a single unified static library
+4. Xcode compiles these files and links the `.a` as part of the normal build
+
+On Debug builds, the script phase exits immediately — all native code loads via Metro dylibs instead.
+
+<Callout type="info">
+Adding new native files does **not** require re-running `npx expo prebuild`. The bridge file names are fixed — only their content changes at build time.
+</Callout>
+
+## Android build pipeline
+
+A Gradle pre-build task invokes the static compiler, which:
+
+1. Generates per-module C++ bridge files with registration constructors
+2. Generates Kotlin wrapper classes for `@nativ_export` functions
+3. Compiles Rust for all ABIs (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`)
+4. Generates a registry class that auto-registers all modules at init time
 
 ## EAS Build
 
@@ -90,7 +113,7 @@ npx nativ build rust --platform ios
 npx nativ build rust --platform android
 ```
 
-This compiles your Rust code into static libraries in `.nativ/generated/release/`. Make sure these are not in your `.gitignore` so EAS picks them up.
+This compiles your Rust code into static libraries in `.nativ/bridges/` (iOS) or `.nativ/generated/release/` (Android). Make sure these are not in your `.gitignore` so EAS picks them up.
 
 Then build normally:
 

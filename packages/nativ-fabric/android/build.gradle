@@ -41,6 +41,7 @@ android {
     externalNativeBuild {
       cmake {
         cppFlags "-std=c++17"
+        arguments "-DANDROID_STL=c++_shared"
       }
     }
   }
@@ -59,10 +60,10 @@ android {
   buildTypes {
     release {
       minifyEnabled false
-      // Pass FERRUM_RELEASE to CMake so native code strips dlopen paths
+      // Pass NATIV_RELEASE and app root to CMake
       externalNativeBuild {
         cmake {
-          arguments "-DFERRUM_RELEASE=1"
+          arguments "-DNATIV_RELEASE=1", "-DNATIV_APP_ROOT=${rootProject.projectDir.parentFile.absolutePath}"
         }
       }
     }
@@ -79,12 +80,36 @@ android {
 
   sourceSets {
     main {
-      java.srcDirs = ['src/main/java']
+      java.srcDirs += ['src/main/java']
     }
     // Production: include generated Kotlin wrappers compiled by Gradle (not DexClassLoader)
     release {
-      java.srcDirs += ['../../../.nativ/generated/kotlin-src']
+      java.srcDirs += ["${rootProject.projectDir.parentFile.absolutePath}/.nativ/generated/kotlin-src"]
     }
+  }
+}
+
+// ─── Static compiler: generate bridges + compile Rust for release ─────
+// Runs before Kotlin/CMake compilation so generated sources are available.
+tasks.register("buildNativBridges", Exec) {
+  def projectRoot = rootProject.projectDir.parentFile.absolutePath
+  def compilerScript = file("${projectDir}/../metro/compilers/static-compiler.js").absolutePath
+
+  commandLine "node", compilerScript,
+    "--platform", "android",
+    "--root", projectRoot
+
+  // Only run for release builds
+  onlyIf { gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") } }
+}
+
+// Wire into release build: run before Kotlin compile and CMake configure
+afterEvaluate {
+  tasks.matching { it.name == "compileReleaseKotlin" }.configureEach {
+    dependsOn "buildNativBridges"
+  }
+  tasks.matching { it.name.startsWith("configureCMake") && it.name.contains("Rel") }.configureEach {
+    dependsOn "buildNativBridges"
   }
 }
 

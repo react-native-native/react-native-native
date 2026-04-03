@@ -1,10 +1,10 @@
-//! `rna-macros` — proc macros for react-native-anywhere.
+//! `nativ-macros` — proc macros for react-native-native.
 
 use proc_macro::TokenStream;
 use quote::{quote, format_ident};
 use syn::{parse_macro_input, ItemStruct, ItemFn, Fields};
 
-/// Marks a struct as a react-native-anywhere component.
+/// Marks a struct as a react-native-native component.
 ///
 /// Struct fields become JS props, automatically extracted via JSI:
 /// - `String` → `props.get_string("field_name")`

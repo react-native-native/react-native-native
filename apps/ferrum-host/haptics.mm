@@ -4,7 +4,7 @@
 #import <UIKit/UIKit.h>
 #include <string>
 
-RNA_EXPORT(sync, main)
+NATIV_EXPORT(sync, main)
 std::string tapLight() {
     UIImpactFeedbackGenerator *gen = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
     [gen prepare];
@@ -12,7 +12,7 @@ std::string tapLight() {
     return "light";
 }
 
-RNA_EXPORT(sync, main)
+NATIV_EXPORT(sync, main)
 std::string tapMedium() {
     UIImpactFeedbackGenerator *gen = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
     [gen prepare];
@@ -20,7 +20,7 @@ std::string tapMedium() {
     return "medium";
 }
 
-RNA_EXPORT(sync, main)
+NATIV_EXPORT(sync, main)
 std::string tapHeavy() {
     UIImpactFeedbackGenerator *gen = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleHeavy];
     [gen prepare];
@@ -28,7 +28,7 @@ std::string tapHeavy() {
     return "heavy";
 }
 
-RNA_EXPORT(sync, main)
+NATIV_EXPORT(sync, main)
 std::string notifySuccess() {
     UINotificationFeedbackGenerator *gen = [[UINotificationFeedbackGenerator alloc] init];
     [gen notificationOccurred:UINotificationFeedbackTypeSuccess];

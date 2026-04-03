@@ -49,11 +49,14 @@ function withReactNativeNative(config) {
   fs.writeFileSync(path.join(projectRoot, '.nativ/android-target'), 'arm64-v8a');
   console.log(`[nativ] Build targets: iOS=${iosTarget}, Android=arm64-v8a`);
 
-  // ── Kotlin compiler daemon ───────────────────────────────────────────
-  startDaemon(projectRoot);
-  process.on('exit', stopDaemon);
-  process.on('SIGINT', () => { stopDaemon(); process.exit(); });
-  process.on('SIGTERM', () => { stopDaemon(); process.exit(); });
+  // ── Kotlin compiler daemon (dev only) ────────────────────────────────
+  const isDev = process.env.NODE_ENV !== 'production';
+  if (isDev) {
+    startDaemon(projectRoot);
+    process.on('exit', stopDaemon);
+    process.on('SIGINT', () => { stopDaemon(); process.exit(); });
+    process.on('SIGTERM', () => { stopDaemon(); process.exit(); });
+  }
 
   // ── Source extensions ────────────────────────────────────────────────
   config.resolver.sourceExts.push('rs', 'cpp', 'cc', 'mm', 'swift', 'kt', 'java');

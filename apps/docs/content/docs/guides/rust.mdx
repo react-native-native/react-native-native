@@ -17,7 +17,7 @@ This does three things:
 
 1. **Verifies Rust is installed** — checks for `rustc` and `cargo`, with install instructions if missing
 2. **Adds cross-compilation targets** — installs `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `aarch64-linux-android`, `armv7-linux-androideabi`, and `x86_64-linux-android` via `rustup target add`
-3. **Creates `Cargo.toml`** — sets up a project-root `Cargo.toml` with the `rna-core` dependency. This is where you add additional Rust dependencies with `cargo add`
+3. **Creates `Cargo.toml`** — sets up a project-root `Cargo.toml` with the `nativ-core` dependency. This is where you add additional Rust dependencies with `cargo add`
 
 For platform-specific dependencies, use target-specific sections in your `Cargo.toml`:
 
@@ -62,7 +62,7 @@ impl NativeView for HelloRust {
 Use it from JS — just import the file:
 
 ```tsx title="App.tsx"
-import HelloRust from './HelloRust';
+import HelloRust from "./HelloRust";
 
 export default function App() {
   return (
@@ -71,7 +71,7 @@ export default function App() {
       r={0.2}
       g={0.9}
       b={0.9}
-      style={{ width: '100%', height: 100 }}
+      style={{ width: "100%", height: 100 }}
     />
   );
 }
@@ -79,13 +79,13 @@ export default function App() {
 
 ### Supported prop types
 
-| Rust type  | JS type   | Default     |
-|-----------|-----------|-------------|
-| `String`  | `string`  | `""`        |
-| `f64`     | `number`  | `0.0`       |
-| `f32`     | `number`  | `0.0`       |
-| `bool`    | `boolean` | `false`     |
-| `Callback`| `function`| no-op       |
+| Rust type  | JS type    | Default |
+| ---------- | ---------- | ------- |
+| `String`   | `string`   | `""`    |
+| `f64`      | `number`   | `0.0`   |
+| `f32`      | `number`   | `0.0`   |
+| `bool`     | `boolean`  | `false` |
+| `Callback` | `function` | no-op   |
 
 Props are automatically converted from camelCase in JS to snake_case in Rust.
 
@@ -150,7 +150,7 @@ pub fn slow_compute(n: i32) -> i32 {
 ```
 
 ```tsx title="App.tsx"
-import { slow_compute } from './async_utils';
+import { slow_compute } from "./async_utils";
 
 const result = await slow_compute(1000);
 ```

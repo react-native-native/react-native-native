@@ -7,7 +7,7 @@
 
 #include "Nativ.h"
 
-RNA_EXPORT(sync, main)
+NATIV_EXPORT(sync, main)
 std::string getColorScheme() {
     UITraitCollection *traits = [UITraitCollection currentTraitCollection];
     switch (traits.userInterfaceStyle) {
@@ -17,19 +17,19 @@ std::string getColorScheme() {
     }
 }
 
-RNA_EXPORT(sync, main)
+NATIV_EXPORT(sync, main)
 double getScreenBrightness() {
     return (double)[UIScreen mainScreen].brightness;
 }
 
-RNA_EXPORT(sync)
+NATIV_EXPORT(sync)
 std::string getDeviceModel() {
     struct utsname systemInfo;
     uname(&systemInfo);
     return std::string(systemInfo.machine);
 }
 
-RNA_EXPORT(sync, main)
+NATIV_EXPORT(sync, main)
 double getStatusBarHeight() {
     UIWindowScene *scene = (UIWindowScene *)[[UIApplication sharedApplication].connectedScenes anyObject];
     return (double)scene.statusBarManager.statusBarFrame.size.height;

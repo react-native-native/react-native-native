@@ -29,7 +29,8 @@ import SwiftCounter from "./SwiftCounter";
 import KotlinCounter from "./KotlinCounter";
 import ComposeCard from "./ComposeCard";
 import { factorial, isPalindrome, greetKotlin } from "./kotlin_utils";
-import { slowGreet, heavyCompute, fetchURL } from "./async_demo";
+import { slowGreetCpp, heavyComputeCpp } from "./async_utils";
+const asyncDemo = Platform.OS === "ios" ? require("./async_demo") : {};
 
 // const TurboModuleRegistry = require("react-native/Libraries/TurboModule/TurboModuleRegistry");
 const SYNC_ROUNDS = 10000;
@@ -83,7 +84,7 @@ function AsyncButton({ label, onPress }) {
     >
       <Text style={styles.label}>{label}</Text>
       <Text style={styles.result}>
-        {loading ? 'loading...' : result || 'tap to test'}
+        {loading ? "loading..." : result || "tap to test"}
       </Text>
     </Pressable>
   );
@@ -199,7 +200,7 @@ export default function App() {
         <Text style={styles.nativLabel}>FerrumContainer (Fabric)</Text>
         <HelloRust
           style={{ width: "100%", height: 100 }}
-          text="Props directly from JS!"
+          text="Props! directly from JS!"
           r={0.1}
           g={0.9}
           b={0.9}
@@ -218,8 +219,8 @@ export default function App() {
               borderRadius: 12,
               overflow: "hidden",
             }}
-            title="Propz from JS!"
-            cornerRadius={20}
+            title="Props from JS!"
+            cornerRadius={18}
           />
         </View>
       )}
@@ -239,10 +240,8 @@ export default function App() {
               borderRadius: 12,
               overflow: "hidden",
             }}
-            title="Hello from SwiftUI!"
-            r={0.7}
-            g={0.5}
-            b={0.9}
+            title="Hello! from SwiftUI!"
+            color="#ffcc99"
           />
         </View>
       )}
@@ -297,7 +296,7 @@ export default function App() {
       )}
 
       <View style={styles.nativBox}>
-        <Text style={styles.nativLabel}>C++ via react-native-anywhere</Text>
+        <Text style={styles.nativLabel}>C++ via react-native-native</Text>
         <Text style={styles.result}>add(2, 3) = {String(add(2, 3))}</Text>
         <Text style={styles.result}>
           fast_inv_sqrt(4) = {String(fast_inv_sqrt(4))}
@@ -374,22 +373,37 @@ export default function App() {
         ))}
       </ScrollView> */}
 
-      {/* ── Async Functions ──────────────────────────── */}
+      {/* ── Async Functions (cross-platform C++) ──────── */}
       <View style={styles.nativBox}>
-        <Text style={styles.nativLabel}>Async Functions (ObjC++)</Text>
+        <Text style={styles.nativLabel}>Async Functions (C++)</Text>
         <AsyncButton
-          label="slowGreet('World')"
-          onPress={() => slowGreet('World')}
+          label="slowGreetCpp('World')"
+          onPress={() => slowGreetCpp("World")}
         />
         <AsyncButton
-          label="heavyCompute(40)"
-          onPress={() => heavyCompute(40)}
-        />
-        <AsyncButton
-          label="fetchURL (httpbin)"
-          onPress={() => fetchURL('https://httpbin.org/get')}
+          label="heavyComputeCpp(40)"
+          onPress={() => heavyComputeCpp(40)}
         />
       </View>
+
+      {/* ── Async Functions (iOS — ObjC++) ────────────── */}
+      {Platform.OS === "ios" && (
+        <View style={styles.nativBox}>
+          <Text style={styles.nativLabel}>Async Functions (ObjC++)</Text>
+          <AsyncButton
+            label="slowGreet('World')"
+            onPress={() => asyncDemo.slowGreet("World")}
+          />
+          <AsyncButton
+            label="heavyCompute(40)"
+            onPress={() => asyncDemo.heavyCompute(40)}
+          />
+          <AsyncButton
+            label="fetchURL (httpbin)"
+            onPress={() => asyncDemo.fetchURL("https://httpbin.org/get")}
+          />
+        </View>
+      )}
 
       <StatusBar style="light" />
     </ScrollView>
@@ -439,14 +453,14 @@ const styles = StyleSheet.create({
     color: "#4ecca3",
     textAlign: "center",
   },
-  ferrumBox: {
+  nativBox: {
     backgroundColor: "#16213e",
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
     overflow: "hidden",
   },
-  ferrumLabel: {
+  nativLabel: {
     fontSize: 13,
     fontWeight: "600",
     color: "#e94560",

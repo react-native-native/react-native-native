@@ -1,4 +1,4 @@
-//! `rna-core` — core types for react-native-anywhere.
+//! `nativ-core` — core types for react-native-native.
 //!
 //! Provides `NativeView`, `NativeViewHandle`, and the ObjC runtime FFI
 //! needed to create UIKit views from Rust.

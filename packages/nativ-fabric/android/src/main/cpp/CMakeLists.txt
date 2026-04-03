@@ -34,23 +34,25 @@ target_link_libraries(nativruntime
 )
 
 # Production: statically link user native code into libnativruntime.so.
+# NATIV_APP_ROOT is passed from build.gradle — the user's project root (parent of android/).
 if(NATIV_RELEASE)
   target_compile_definitions(nativruntime PRIVATE NATIV_RELEASE=1)
 
   file(GLOB_RECURSE NATIV_USER_SOURCES
-    "${CMAKE_SOURCE_DIR}/../../../../../../.nativ/generated/bridges/android/*.cpp"
-    "${CMAKE_SOURCE_DIR}/../../../../../../.nativ/generated/bridges/android/*.c"
+    "${NATIV_APP_ROOT}/.nativ/generated/bridges/android/*.cpp"
+    "${NATIV_APP_ROOT}/.nativ/generated/bridges/android/*.c"
   )
   if(NATIV_USER_SOURCES)
     target_sources(nativruntime PRIVATE ${NATIV_USER_SOURCES})
   endif()
 
+  # Include paths: user project root + Nativ.h location
   target_include_directories(nativruntime PRIVATE
-    "${CMAKE_SOURCE_DIR}/../../../.."
-    "${CMAKE_SOURCE_DIR}/../../../../../../ferrum"
+    "${NATIV_APP_ROOT}"
+    "${CMAKE_SOURCE_DIR}/../../../../metro"
   )
 
-  set(NATIV_RUST_LIB "${CMAKE_SOURCE_DIR}/../../../../../../.nativ/generated/release/${ANDROID_ABI}/libnativ_user.a")
+  set(NATIV_RUST_LIB "${NATIV_APP_ROOT}/.nativ/generated/release/${ANDROID_ABI}/libnativ_user.a")
   if(EXISTS ${NATIV_RUST_LIB})
     target_link_libraries(nativruntime -Wl,--whole-archive ${NATIV_RUST_LIB} -Wl,--no-whole-archive)
   endif()

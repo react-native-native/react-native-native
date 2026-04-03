@@ -370,7 +370,6 @@ module.exports.transform = async function ferrumTransform({
         else compileRustDylib(filename, projectRoot, { target: buildTarget });
       });
       writeManifest(`nativ_${baseName}`, { source: filename, type: isComponent ? 'rust-component' : 'rust' });
-
       // Generate .d.ts for TypeScript support
       try {
         if (isComponent) {
@@ -494,8 +493,8 @@ module.exports.transform = async function ferrumTransform({
       const componentId = `nativ.${baseName}`;
 
       let srcHash = 'prod';
+      const cppProps = extractCppComponentProps(filename);
       if (isDev) {
-        const cppProps = extractCppComponentProps(filename);
         const _cppCompLibExt = isAndroid ? 'so' : 'dylib';
         srcHash = cachedCompile(src, `nativ_${baseName}`, _cppCompLibExt, () => {
           if (isAndroid) compileAndroidCppComponentDylib(filename, _includePaths, projectRoot, baseName, cppProps, { target: buildTarget });

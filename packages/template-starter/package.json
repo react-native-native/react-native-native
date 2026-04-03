@@ -2,6 +2,18 @@
   "name": "@react-native-native/template-starter",
   "description": "Expo template with React Native Native pre-configured. Write native code in C++, Rust, Swift, and Kotlin with hot-reload.",
   "license": "MIT",
+  "keywords": [
+    "react-native",
+    "expo",
+    "template",
+    "native",
+    "c++",
+    "rust",
+    "swift",
+    "kotlin",
+    "hot-reload",
+    "nativ"
+  ],
   "version": "55.0.0",
   "main": "index.js",
   "scripts": {
