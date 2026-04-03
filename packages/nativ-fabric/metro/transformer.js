@@ -1,5 +1,5 @@
 /**
- * Universal Ferrum transformer — routes .rs, .cpp, .mm, .cc files
+ * Universal Nativ transformer — routes .rs, .cpp, .mm, .cc files
  * to the appropriate handler. All other files go to the default Expo
  * Babel transformer.
  */
@@ -50,7 +50,7 @@ function rustComponentShim(componentId, srcHash, libExt) {
   // patches the function, the new hash is baked into the new body.
   return `
 import React from 'react';
-import FerrumContainer from '@react-native-native/nativ-fabric/src/FerrumContainerNativeComponent';
+import NativContainer from '@react-native-native/nativ-fabric/src/NativContainerNativeComponent';
 
 if (!global.__nativ_loaded) global.__nativ_loaded = {};
 
@@ -84,7 +84,7 @@ const ${displayName} = React.forwardRef((props, ref) => {
   const _pj = String(Date.now());
 
   return (
-    <FerrumContainer
+    <NativContainer
       style={style}
       ref={ref}
       key={'${srcHash}'}
@@ -134,7 +134,7 @@ function rustComponentShimProd(componentId) {
   const displayName = componentId.split('.').pop();
   return `
 import React from 'react';
-import FerrumContainer from '@react-native-native/nativ-fabric/src/FerrumContainerNativeComponent';
+import NativContainer from '@react-native-native/nativ-fabric/src/NativContainerNativeComponent';
 
 const ${displayName} = React.forwardRef((props, ref) => {
   const { style, children, ...nativeProps } = props;
@@ -144,7 +144,7 @@ const ${displayName} = React.forwardRef((props, ref) => {
   }
 
   return (
-    <FerrumContainer
+    <NativContainer
       style={style}
       ref={ref}
       componentId="${componentId}"

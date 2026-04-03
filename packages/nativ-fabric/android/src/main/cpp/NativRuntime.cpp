@@ -1,4 +1,4 @@
-// FerrumRuntime JNI bridge — Android equivalent of iOS FerrumCppRuntime.
+// NativRuntime JNI bridge — Android equivalent of iOS NativRuntime.
 // Maintains the render registry + sync function registry.
 // User .so dylibs register via __attribute__((constructor)) at dlopen time.
 
@@ -8,31 +8,31 @@
 #include <unordered_set>
 #include <android/log.h>
 
-#define LOG_TAG "FerrumRuntime"
+#define LOG_TAG "NativRuntime"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 // ─── Registry types (same C ABI as iOS) ────────────────────────────────
 
-typedef const char* (*RNASyncFn)(const char* argsJson);
-typedef void (*RNAAsyncFn)(const char* argsJson, void (*resolve)(const char*), void (*reject)(const char*, const char*));
-typedef void (*FerrumRenderFn)(void* view_handle, float width, float height,
+typedef const char* (*NativSyncFn)(const char* argsJson);
+typedef void (*NativAsyncFn)(const char* argsJson, void (*resolve)(const char*), void (*reject)(const char*, const char*));
+typedef void (*NativRenderFn)(void* view_handle, float width, float height,
                                void* runtime, void* props);
 
 // ─── Registries ────────────────────────────────────────────────────────
 
-static std::unordered_map<std::string, RNASyncFn>& getSyncRegistry() {
-    static std::unordered_map<std::string, RNASyncFn> reg;
+static std::unordered_map<std::string, NativSyncFn>& getSyncRegistry() {
+    static std::unordered_map<std::string, NativSyncFn> reg;
     return reg;
 }
 
-static std::unordered_map<std::string, RNAAsyncFn>& getAsyncRegistry() {
-    static std::unordered_map<std::string, RNAAsyncFn> reg;
+static std::unordered_map<std::string, NativAsyncFn>& getAsyncRegistry() {
+    static std::unordered_map<std::string, NativAsyncFn> reg;
     return reg;
 }
 
-static std::unordered_map<std::string, FerrumRenderFn>& getRenderRegistry() {
-    static std::unordered_map<std::string, FerrumRenderFn> reg;
+static std::unordered_map<std::string, NativRenderFn>& getRenderRegistry() {
+    static std::unordered_map<std::string, NativRenderFn> reg;
     return reg;
 }
 
@@ -57,19 +57,19 @@ static thread_local jobject g_currentView = nullptr;
 
 extern "C" {
 
-void nativ_register_sync(const char* moduleId, const char* fnName, RNASyncFn fn) {
+void nativ_register_sync(const char* moduleId, const char* fnName, NativSyncFn fn) {
     auto key = std::string(moduleId) + "::" + fnName;
     getSyncRegistry()[key] = fn;
     LOGI("registered sync: %s", key.c_str());
 }
 
-void nativ_register_async(const char* moduleId, const char* fnName, RNAAsyncFn fn) {
+void nativ_register_async(const char* moduleId, const char* fnName, NativAsyncFn fn) {
     auto key = std::string(moduleId) + "::" + fnName;
     getAsyncRegistry()[key] = fn;
     LOGI("registered async: %s", key.c_str());
 }
 
-void nativ_register_render(const char* componentId, FerrumRenderFn fn) {
+void nativ_register_render(const char* componentId, NativRenderFn fn) {
     getRenderRegistry()[std::string(componentId)] = fn;
     LOGI("registered render: %s", componentId);
 }
@@ -123,7 +123,7 @@ void nativ_jsi_call_function_with_string(void* runtime, void* object,
 void nativ_register_view(const char*, void*) {}
 void nativ_unregister_view(const char*) {}
 
-// Direct C dispatch — called from RNABindingsInstaller.cpp
+// Direct C dispatch — called from NativBindingsInstaller.cpp
 const char* nativ_call_sync(const char* moduleId, const char* fnName, const char* argsJson) {
     auto key = std::string(moduleId) + "::" + fnName;
     auto &reg = getSyncRegistry();
@@ -133,7 +133,7 @@ const char* nativ_call_sync(const char* moduleId, const char* fnName, const char
 }
 
 // Async dispatch — returns the function pointer (BindingsInstaller handles Promise + threading)
-RNAAsyncFn nativ_get_async_fn(const char* moduleId, const char* fnName) {
+NativAsyncFn nativ_get_async_fn(const char* moduleId, const char* fnName) {
     auto key = std::string(moduleId) + "::" + fnName;
     auto &reg = getAsyncRegistry();
     auto it = reg.find(key);
@@ -436,12 +436,12 @@ static std::unordered_map<std::string, bool> jmapToBoolMap(JNIEnv* env, jobject 
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_com_ferrumfabric_FerrumRuntime_nativeInit(JNIEnv* env, jobject thiz) {
-    LOGI("FerrumRuntime initialized");
+Java_com_nativfabric_NativRuntime_nativeInit(JNIEnv* env, jobject thiz) {
+    LOGI("NativRuntime initialized");
 }
 
 JNIEXPORT void JNICALL
-Java_com_ferrumfabric_FerrumRuntime_nativeTryRender(
+Java_com_nativfabric_NativRuntime_nativeTryRender(
     JNIEnv* env, jobject thiz,
     jstring jComponentId, jobject jView, jfloat width, jfloat height,
     jobject jStrings, jobject jNumbers, jobject jBools
@@ -484,7 +484,7 @@ Java_com_ferrumfabric_FerrumRuntime_nativeTryRender(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_ferrumfabric_FerrumRuntime_nativeCallSync(
+Java_com_nativfabric_NativRuntime_nativeCallSync(
     JNIEnv* env, jobject thiz,
     jstring jModuleId, jstring jFnName, jstring jArgsJson
 ) {

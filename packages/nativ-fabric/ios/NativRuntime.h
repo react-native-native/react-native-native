@@ -1,17 +1,17 @@
 #pragma once
 
 // C ABI function types
-typedef const char* (*RNASyncFn)(const char*);
-typedef void (*RNAAsyncFn)(const char*, void (*)(const char*), void (*)(const char*, const char*));
-typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
+typedef const char* (*NativSyncFn)(const char*);
+typedef void (*NativAsyncFn)(const char*, void (*)(const char*), void (*)(const char*, const char*));
+typedef void (*NativRenderFn)(void*, float, float, void*, void*);
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void nativ_register_sync(const char* moduleId, const char* fnName, RNASyncFn fn);
-void nativ_register_async(const char* moduleId, const char* fnName, RNAAsyncFn fn);
-void nativ_register_render(const char* componentId, FerrumRenderFn fn);
+void nativ_register_sync(const char* moduleId, const char* fnName, NativSyncFn fn);
+void nativ_register_async(const char* moduleId, const char* fnName, NativAsyncFn fn);
+void nativ_register_render(const char* componentId, NativRenderFn fn);
 const char* nativ_try_render(const char* componentId, void* view, float w, float h);
 
 // JSI value access (C wrappers for Rust/Swift)

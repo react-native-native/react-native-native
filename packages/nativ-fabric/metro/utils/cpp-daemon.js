@@ -34,13 +34,13 @@ class CppDaemon extends EventEmitter {
         encoding: 'utf8',
       }).trim();
     } catch {
-      console.warn('[ferrum] Could not resolve iphoneos SDK, falling back to iphonesimulator');
+      console.warn('[nativ] Could not resolve iphoneos SDK, falling back to iphonesimulator');
       try {
         this.sdkPath = execSync('xcrun --sdk iphonesimulator --show-sdk-path', {
           encoding: 'utf8',
         }).trim();
       } catch {
-        console.error('[ferrum] No iOS SDK found');
+        console.error('[nativ] No iOS SDK found');
         return;
       }
     }
@@ -52,15 +52,15 @@ class CppDaemon extends EventEmitter {
       const match = identities.match(/"(Apple Development:[^"]+)"/);
       if (match) {
         this.signingIdentity = match[1];
-        console.log(`[ferrum] Signing identity: ${this.signingIdentity}`);
+        console.log(`[nativ] Signing identity: ${this.signingIdentity}`);
       }
     } catch {
-      console.warn('[ferrum] No signing identity found — dylibs will be unsigned');
+      console.warn('[nativ] No signing identity found — dylibs will be unsigned');
     }
 
     // No file watcher needed — Metro's watcher sees .cpp changes and the
     // transformer calls buildAndWait() directly. This avoids double-refresh.
-    console.log('[ferrum] CppDaemon started');
+    console.log('[nativ] CppDaemon started');
   }
 
   _startWatcher() {
@@ -107,7 +107,7 @@ class CppDaemon extends EventEmitter {
       return;
     }
 
-    console.log(`[ferrum] File changed: ${path.relative(this.projectRoot, filepath)}`);
+    console.log(`[nativ] File changed: ${path.relative(this.projectRoot, filepath)}`);
     this._rebuildFile(filepath);
   }
 
@@ -122,7 +122,7 @@ class CppDaemon extends EventEmitter {
 
     this.building.add(filepath);
     this.emit('build:start', filepath);
-    console.log(`[ferrum] Building dylib for ${rel}...`);
+    console.log(`[nativ] Building dylib for ${rel}...`);
 
     const isObjCpp = filepath.endsWith('.mm');
     const lang = isObjCpp ? 'objective-c++' : 'c++';
@@ -139,7 +139,7 @@ class CppDaemon extends EventEmitter {
     const exports = extractCppExports(filepath, this.includePaths, null);
 
     if (exports.length === 0) {
-      console.warn(`[ferrum] No NATIV_EXPORT functions in ${rel}, skipping dylib`);
+      console.warn(`[nativ] No NATIV_EXPORT functions in ${rel}, skipping dylib`);
       this.building.delete(filepath);
       this.emit('build:error', filepath, 'No exports found');
       return;
@@ -177,7 +177,7 @@ class CppDaemon extends EventEmitter {
       try { fs.unlinkSync(bridgePath); } catch {}
 
       if (err) {
-        console.error(`[ferrum] Build failed: ${path.basename(filepath)}`);
+        console.error(`[nativ] Build failed: ${path.basename(filepath)}`);
         console.error(stderr.slice(0, 500));
         this.emit('build:error', filepath, stderr);
         return;
@@ -190,12 +190,12 @@ class CppDaemon extends EventEmitter {
             stdio: 'pipe',
           });
         } catch (signErr) {
-          console.warn(`[ferrum] Signing failed (will try unsigned): ${signErr.message}`);
+          console.warn(`[nativ] Signing failed (will try unsigned): ${signErr.message}`);
         }
       }
 
       const size = fs.statSync(dylibPath).size;
-      console.log(`[ferrum] Built ${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
+      console.log(`[nativ] Built ${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
       this.emit('build:complete', filepath, moduleId, dylibPath);
     });
   }
@@ -296,13 +296,13 @@ class CppDaemon extends EventEmitter {
    * waits until the dylib is ready.
    */
   buildAndWait(filepath) {
-    console.log(`[ferrum] buildAndWait: ${path.basename(filepath)}`);
+    console.log(`[nativ] buildAndWait: ${path.basename(filepath)}`);
     return new Promise((resolve) => {
       const onComplete = (builtPath) => {
         if (builtPath === filepath) {
           this.removeListener('build:complete', onComplete);
           this.removeListener('build:error', onError);
-          console.log(`[ferrum] buildAndWait resolved (complete): ${path.basename(filepath)}`);
+          console.log(`[nativ] buildAndWait resolved (complete): ${path.basename(filepath)}`);
           resolve();
         }
       };
@@ -310,7 +310,7 @@ class CppDaemon extends EventEmitter {
         if (errorPath === filepath) {
           this.removeListener('build:complete', onComplete);
           this.removeListener('build:error', onError);
-          console.log(`[ferrum] buildAndWait resolved (error): ${path.basename(filepath)}`);
+          console.log(`[nativ] buildAndWait resolved (error): ${path.basename(filepath)}`);
           resolve();
         }
       };
@@ -321,7 +321,7 @@ class CppDaemon extends EventEmitter {
       if (!this.building.has(filepath)) {
         this._rebuildFile(filepath);
       } else {
-        console.log(`[ferrum] buildAndWait: already building, just waiting`);
+        console.log(`[nativ] buildAndWait: already building, just waiting`);
       }
     });
   }

@@ -10,15 +10,15 @@ import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * FerrumRuntime — native function registry, .so loader, and .dex loader.
- * Android equivalent of iOS's FerrumCppRuntime.
+ * NativRuntime — native function registry, .so loader, and .dex loader.
+ * Android equivalent of iOS's NativRuntime.
  *
  * Native (.so): render functions and sync functions registered via JNI
  * from loaded .so files (__attribute__((constructor))).
  *
  * Kotlin (.dex): loaded via DexClassLoader, dispatched via reflection.
  */
-object FerrumRuntime {
+object NativRuntime {
 
     // Props snapshot: plain key-value maps (no JNI references)
     data class PropsSnapshot(
@@ -39,7 +39,7 @@ object FerrumRuntime {
     // Loaded Kotlin Compose renderers: componentId → render Method
     private val kotlinRenderers = ConcurrentHashMap<String, Method>()
 
-    // Application context (set from FerrumRuntimeModule)
+    // Application context (set from NativRuntimeModule)
     var appContext: Context? = null
 
     fun setComponentProps(componentId: String, props: PropsSnapshot) {
@@ -63,7 +63,7 @@ object FerrumRuntime {
                 renderer.invoke(null, view, propsMap)
                 return
             } catch (e: Exception) {
-                android.util.Log.e("FerrumRuntime", "Kotlin render failed: ${e.message}", e)
+                android.util.Log.e("NativRuntime", "Kotlin render failed: ${e.message}", e)
             }
         }
 
@@ -81,7 +81,7 @@ object FerrumRuntime {
             loadedLibs[path] = true
             true
         } catch (e: UnsatisfiedLinkError) {
-            android.util.Log.e("FerrumRuntime", "Failed to load $path: ${e.message}")
+            android.util.Log.e("NativRuntime", "Failed to load $path: ${e.message}")
             false
         }
     }
@@ -97,7 +97,7 @@ object FerrumRuntime {
 
         val ctx = appContext
         if (ctx == null) {
-            android.util.Log.e("FerrumRuntime", "loadDex: appContext is null!")
+            android.util.Log.e("NativRuntime", "loadDex: appContext is null!")
             return false
         }
         return try {
@@ -122,7 +122,7 @@ object FerrumRuntime {
             try {
                 val dispatch = clazz.getMethod("dispatch", String::class.java, String::class.java)
                 kotlinDispatch[moduleId] = dispatch
-                android.util.Log.i("FerrumRuntime", "Loaded Kotlin module: $moduleId")
+                android.util.Log.i("NativRuntime", "Loaded Kotlin module: $moduleId")
             } catch (_: NoSuchMethodException) {}
 
             // Check for render method (Compose component)
@@ -130,12 +130,12 @@ object FerrumRuntime {
                 val render = clazz.getMethod("render", ViewGroup::class.java, Map::class.java)
                 val componentId = "ferrum.$moduleId"
                 kotlinRenderers[componentId] = render
-                android.util.Log.i("FerrumRuntime", "Loaded Kotlin component: $componentId")
+                android.util.Log.i("NativRuntime", "Loaded Kotlin component: $componentId")
             } catch (_: NoSuchMethodException) {}
 
             true
         } catch (e: Exception) {
-            android.util.Log.e("FerrumRuntime", "loadDex failed: ${e.message}")
+            android.util.Log.e("NativRuntime", "loadDex failed: ${e.message}")
             false
         }
     }
@@ -148,7 +148,7 @@ object FerrumRuntime {
         return try {
             dispatch.invoke(null, fnName, argsJson) as? String
         } catch (e: Exception) {
-            android.util.Log.e("FerrumRuntime", "callKotlin failed: $moduleId::$fnName: ${e.message}")
+            android.util.Log.e("NativRuntime", "callKotlin failed: $moduleId::$fnName: ${e.message}")
             null
         }
     }
@@ -166,36 +166,36 @@ object FerrumRuntime {
             System.loadLibrary("nativruntime")
             nativeInit()
         } catch (e: UnsatisfiedLinkError) {
-            android.util.Log.w("FerrumRuntime", "nativruntime not loaded: ${e.message}")
+            android.util.Log.w("NativRuntime", "nativruntime not loaded: ${e.message}")
         }
 
         // Production: register Kotlin modules compiled into the APK by Gradle.
         // In dev mode, modules are loaded via DexClassLoader (loadDex).
         if (!BuildConfig.DEBUG) {
             try {
-                Class.forName("com.nativfabric.generated.FerrumModuleRegistry")
+                Class.forName("com.nativfabric.generated.NativModuleRegistry")
                     .getMethod("ensure")
                     .invoke(null)
-                android.util.Log.i("FerrumRuntime", "Production: Kotlin module registry loaded")
+                android.util.Log.i("NativRuntime", "Production: Kotlin module registry loaded")
             } catch (e: ClassNotFoundException) {
                 // No generated modules — that's fine
             } catch (e: Exception) {
-                android.util.Log.w("FerrumRuntime", "Kotlin registry failed: ${e.message}")
+                android.util.Log.w("NativRuntime", "Kotlin registry failed: ${e.message}")
             }
         }
     }
 
-    /** Register a Kotlin dispatch method (production — called by generated FerrumModuleRegistry) */
+    /** Register a Kotlin dispatch method (production — called by generated NativModuleRegistry) */
     @JvmStatic
     fun registerKotlinDispatch(moduleId: String, dispatch: java.lang.reflect.Method) {
         kotlinDispatch[moduleId] = dispatch
-        android.util.Log.i("FerrumRuntime", "Production: registered Kotlin dispatch: $moduleId")
+        android.util.Log.i("NativRuntime", "Production: registered Kotlin dispatch: $moduleId")
     }
 
-    /** Register a Kotlin renderer method (production — called by generated FerrumModuleRegistry) */
+    /** Register a Kotlin renderer method (production — called by generated NativModuleRegistry) */
     @JvmStatic
     fun registerKotlinRenderer(componentId: String, render: java.lang.reflect.Method) {
         kotlinRenderers[componentId] = render
-        android.util.Log.i("FerrumRuntime", "Production: registered Kotlin renderer: $componentId")
+        android.util.Log.i("NativRuntime", "Production: registered Kotlin renderer: $componentId")
     }
 }

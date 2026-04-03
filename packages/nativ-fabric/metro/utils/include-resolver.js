@@ -22,7 +22,7 @@ function getIncludePaths(projectRoot) {
     }).trim();
     paths.push(`-isysroot`, sdk);
   } catch {
-    console.warn('[ferrum] Could not resolve iOS SDK path');
+    console.warn('[nativ] Could not resolve iOS SDK path');
   }
 
   // 2. CocoaPods public headers

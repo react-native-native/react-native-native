@@ -5,13 +5,13 @@ import android.view.View
 import android.widget.FrameLayout
 
 /**
- * FerrumContainerView — hosts native views rendered by Rust/C++/Kotlin/Compose.
+ * NativContainerView — hosts native views rendered by Rust/C++/Kotlin/Compose.
  *
  * Simple FrameLayout. Render functions add children directly.
  * We override onLayout to manually measure/layout children since
  * Fabric/Yoga doesn't measure programmatically-added Android views.
  */
-class FerrumContainerView(context: Context) : FrameLayout(context) {
+class NativContainerView(context: Context) : FrameLayout(context) {
     init {
         setBackgroundColor(0x00000000)
     }

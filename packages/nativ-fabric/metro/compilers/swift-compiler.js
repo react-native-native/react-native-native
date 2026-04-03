@@ -243,11 +243,11 @@ void nativ_register_${moduleId}(void) {
       cBridgePath,
     ];
 
-    console.log(`[ferrum] Compiling ${name}.swift component via swiftc...`);
+    console.log(`[nativ] Compiling ${name}.swift component via swiftc...`);
     try {
       execSync(cmd.join(' '), { stdio: 'pipe', encoding: 'utf8' });
     } catch (err) {
-      console.error(`[ferrum] Swift compile failed: ${name}.swift`);
+      console.error(`[nativ] Swift compile failed: ${name}.swift`);
       console.error((err.stderr || '').slice(0, 2000));
       return null;
     }
@@ -257,7 +257,7 @@ void nativ_register_${moduleId}(void) {
     }
 
     const size = fs.statSync(dylibPath).size;
-    console.log(`[ferrum] Built ${moduleId}.dylib component (${(size / 1024).toFixed(1)}KB)`);
+    console.log(`[nativ] Built ${moduleId}.dylib component (${(size / 1024).toFixed(1)}KB)`);
     return { dylibPath, exports: [], isComponent: true };
   }
 
@@ -335,11 +335,11 @@ ${registrations}
     cBridgePath,
   ];
 
-  console.log(`[ferrum] Compiling ${name}.swift via swiftc...`);
+  console.log(`[nativ] Compiling ${name}.swift via swiftc...`);
   try {
     execSync(cmd.join(' '), { stdio: 'pipe', encoding: 'utf8' });
   } catch (err) {
-    console.error(`[ferrum] Swift compile failed: ${name}.swift`);
+    console.error(`[nativ] Swift compile failed: ${name}.swift`);
     console.error((err.stderr || '').slice(0, 2000));
     return null;
   }
@@ -352,7 +352,7 @@ ${registrations}
   }
 
   const size = fs.statSync(dylibPath).size;
-  console.log(`[ferrum] Built ${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
+  console.log(`[nativ] Built ${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
   return { dylibPath, exports };
 }
 

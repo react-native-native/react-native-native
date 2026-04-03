@@ -1,4 +1,4 @@
-// Nativ.h — Runtime header for react-native-anywhere C++/ObjC++ files.
+// Nativ.h — Runtime header for react-native-native C++/ObjC++ files.
 // Include this in any .cpp or .mm file that exports functions or components to JS.
 
 #pragma once
@@ -31,10 +31,10 @@
 //   // ... use props.title, props.opacity, props.onPress()
 // }
 
-// JSI C API — defined in FerrumCppRuntime, resolved at dlopen
+// JSI C API — defined in NativRuntime, resolved at dlopen
 extern "C" {
-  typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
-  void nativ_register_render(const char*, FerrumRenderFn);
+  typedef void (*NativRenderFn)(void*, float, float, void*, void*);
+  void nativ_register_render(const char*, NativRenderFn);
 
   // Scalar props
   const char* nativ_jsi_get_string(void* rt, void* obj, const char* name);

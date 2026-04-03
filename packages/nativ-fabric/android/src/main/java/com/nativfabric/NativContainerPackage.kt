@@ -7,33 +7,33 @@ import com.facebook.react.module.model.ReactModuleInfo
 import com.facebook.react.module.model.ReactModuleInfoProvider
 import com.facebook.react.uimanager.ViewManager
 
-class FerrumContainerPackage : BaseReactPackage() {
+class NativContainerPackage : BaseReactPackage() {
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
-        // Ensure FerrumRuntime has app context for DexClassLoader
-        if (FerrumRuntime.appContext == null) {
-            FerrumRuntime.appContext = reactContext.applicationContext
+        // Ensure NativRuntime has app context for DexClassLoader
+        if (NativRuntime.appContext == null) {
+            NativRuntime.appContext = reactContext.applicationContext
         }
-        return listOf(FerrumContainerViewManager())
+        return listOf(NativContainerViewManager())
     }
 
     override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
         return when (name) {
-            FerrumRuntimeModule.NAME -> FerrumRuntimeModule(reactContext)
-            RNARuntimeModule.NAME -> RNARuntimeModule(reactContext)
+            NativRuntimeModule.NAME -> NativRuntimeModule(reactContext)
+            NativRuntimeModule.NAME -> NativRuntimeModule(reactContext)
             else -> null
         }
     }
 
     override fun getReactModuleInfoProvider() = ReactModuleInfoProvider {
         mapOf(
-            FerrumRuntimeModule.NAME to ReactModuleInfo(
-                FerrumRuntimeModule.NAME,
-                FerrumRuntimeModule.NAME,
+            NativRuntimeModule.NAME to ReactModuleInfo(
+                NativRuntimeModule.NAME,
+                NativRuntimeModule.NAME,
                 false, false, false, false, true
             ),
-            RNARuntimeModule.NAME to ReactModuleInfo(
-                RNARuntimeModule.NAME,
-                RNARuntimeModule.NAME,
+            NativRuntimeModule.NAME to ReactModuleInfo(
+                NativRuntimeModule.NAME,
+                NativRuntimeModule.NAME,
                 false, false, false, false, true
             )
         )

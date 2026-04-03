@@ -1,5 +1,5 @@
-// FerrumContainerComponentView — Fabric component that hosts native views
-// rendered by Rust/C++/Swift/ObjC++ via react-native-anywhere.
+// NativContainerComponentView — Fabric component that hosts native views
+// rendered by Rust/C++/Swift/ObjC++ via react-native-native.
 //
 // Uses self.contentView (RCTViewComponentView built-in) to isolate our
 // rendering from Fabric's own view management. Fabric manages `self`,
@@ -13,14 +13,14 @@
 #include "react/renderer/components/NativFabricSpec/Props.h"
 #include "react/renderer/components/NativFabricSpec/RCTComponentViewHelpers.h"
 
-#import "FerrumCppRuntime.h"
+#import "NativRuntime.h"
 
 using namespace facebook::react;
 
-@interface FerrumContainerComponentView : RCTViewComponentView
+@interface NativContainerComponentView : RCTViewComponentView
 @end
 
-@implementation FerrumContainerComponentView {
+@implementation NativContainerComponentView {
   UIView *_contentView;
   std::string _componentId;
   std::string _propsJson;
@@ -31,17 +31,17 @@ using namespace facebook::react;
 + (void)load {
   dispatch_async(dispatch_get_main_queue(), ^{
     [[RCTComponentViewFactory currentComponentViewFactory]
-        registerComponentViewClass:FerrumContainerComponentView.class];
+        registerComponentViewClass:NativContainerComponentView.class];
   });
 }
 
 + (ComponentDescriptorProvider)componentDescriptorProvider {
-  return concreteComponentDescriptorProvider<FerrumContainerComponentDescriptor>();
+  return concreteComponentDescriptorProvider<NativContainerComponentDescriptor>();
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
-    static const auto defaultProps = std::make_shared<const FerrumContainerProps>();
+    static const auto defaultProps = std::make_shared<const NativContainerProps>();
     _props = defaultProps;
 
     _contentView = [[UIView alloc] init];
@@ -55,7 +55,7 @@ using namespace facebook::react;
 
 - (void)updateProps:(const Props::Shared &)props
            oldProps:(const Props::Shared &)oldProps {
-  auto const &newProps = *std::static_pointer_cast<FerrumContainerProps const>(props);
+  auto const &newProps = *std::static_pointer_cast<NativContainerProps const>(props);
 
   bool componentChanged = (_componentId != newProps.componentId);
   bool propsChanged = (_propsJson != newProps.propsJson);

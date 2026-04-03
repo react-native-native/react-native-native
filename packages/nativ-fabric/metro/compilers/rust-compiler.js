@@ -73,7 +73,7 @@ function ensureNativeDylib(projectRoot) {
   const outputDir = path.join(projectRoot, '.nativ/dylibs');
   fs.mkdirSync(outputDir, { recursive: true });
 
-  console.log('[ferrum] Building native.dylib (shared deps)...');
+  console.log('[nativ] Building native.dylib (shared deps)...');
   try {
     execSync([
       'cargo', 'build',
@@ -104,10 +104,10 @@ function ensureNativeDylib(projectRoot) {
       }
 
       const size = fs.statSync(path.join(outputDir, 'native.dylib')).size;
-      console.log(`[ferrum] Built native.dylib (${(size / 1024).toFixed(1)}KB) — shared deps`);
+      console.log(`[nativ] Built native.dylib (${(size / 1024).toFixed(1)}KB) — shared deps`);
     }
   } catch (err) {
-    console.error('[ferrum] native.dylib build failed:', (err.stderr || '').slice(0, 1000));
+    console.error('[nativ] native.dylib build failed:', (err.stderr || '').slice(0, 1000));
   }
 }
 
@@ -124,14 +124,14 @@ function ensureRustCrate(filepath, projectRoot) {
   const { functions, isComponent } = extractRustExports(filepath);
 
   if (!isComponent && functions.length === 0) {
-    console.warn(`[ferrum] ${name}.rs: no #[component] or #[function] found, skipping`);
+    console.warn(`[nativ] ${name}.rs: no #[component] or #[function] found, skipping`);
     return null;
   }
 
   // The user's Cargo.toml must exist — created by `npx @react-native-native/cli setup-rust`
   const cargoTomlPath = path.join(projectRoot, 'Cargo.toml');
   if (!fs.existsSync(cargoTomlPath)) {
-    console.error('[ferrum] No Cargo.toml found. Run: npx @react-native-native/cli setup-rust');
+    console.error('[nativ] No Cargo.toml found. Run: npx @react-native-native/cli setup-rust');
     return null;
   }
 
@@ -231,7 +231,7 @@ function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
 
   const rustFlags = '-C link-arg=-undefined -C link-arg=dynamic_lookup';
 
-  console.log(`[ferrum] Compiling ${name}.rs via cargo...`);
+  console.log(`[nativ] Compiling ${name}.rs via cargo...`);
   try {
     const output = execSync(cmd.join(' '), {
       stdio: 'pipe',
@@ -244,7 +244,7 @@ function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
     });
     if (output) console.log(output.trim());
   } catch (err) {
-    console.error(`[ferrum] Rust compile failed: ${name}.rs`);
+    console.error(`[nativ] Rust compile failed: ${name}.rs`);
     console.error((err.stderr || '').slice(0, 5000));
     return null;
   }
@@ -252,7 +252,7 @@ function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
   // Copy the built dylib from Cargo's target dir to our dylib output dir
   const builtDylib = path.join(cargoOutDir, `libnativ_${moduleId}.dylib`);
   if (!fs.existsSync(builtDylib)) {
-    console.error(`[ferrum] Built dylib not found: ${builtDylib}`);
+    console.error(`[nativ] Built dylib not found: ${builtDylib}`);
     return null;
   }
   fs.copyFileSync(builtDylib, dylibPath);
@@ -264,7 +264,7 @@ function compileRustDylib(filepath, projectRoot, { target = 'device' } = {}) {
   }
 
   const size = fs.statSync(dylibPath).size;
-  console.log(`[ferrum] Built nativ_${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
+  console.log(`[nativ] Built nativ_${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
   return { dylibPath, isComponent, functions };
 }
 
@@ -578,14 +578,14 @@ impl SerializeLike for () { fn serialize(&self) -> String { "null".into() } }
 fn serde_like_serialize<T: SerializeLike>(v: &T) -> String { v.serialize() }
 
 // Registry
-type RNASyncFn = extern "C" fn(*const c_char) -> *const c_char;
-type RNAAsyncFn = extern "C" fn(*const c_char, extern "C" fn(*const c_char), extern "C" fn(*const c_char, *const c_char));
+type NativSyncFn = extern "C" fn(*const c_char) -> *const c_char;
+type NativAsyncFn = extern "C" fn(*const c_char, extern "C" fn(*const c_char), extern "C" fn(*const c_char, *const c_char));
 
 // On iOS: direct extern reference (resolved via -undefined dynamic_lookup)
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
-    fn nativ_register_sync(module_id: *const c_char, fn_name: *const c_char, f: RNASyncFn);
-    fn nativ_register_async(module_id: *const c_char, fn_name: *const c_char, f: RNAAsyncFn);
+    fn nativ_register_sync(module_id: *const c_char, fn_name: *const c_char, f: NativSyncFn);
+    fn nativ_register_async(module_id: *const c_char, fn_name: *const c_char, f: NativAsyncFn);
 }
 
 // ─── User code ─────────────────────────────────────────────────────────
@@ -614,9 +614,9 @@ ${asyncRegistrations.join('\n')}
 // On Android dev: host calls nativ_init after dlopen, passing the registry function pointer.
 // Android linker namespaces prevent dlsym(RTLD_DEFAULT) from finding host symbols.
 #[cfg(all(target_os = "android", not(unified)))]
-static mut NATIV_REGISTER_SYNC: Option<unsafe extern "C" fn(*const c_char, *const c_char, RNASyncFn)> = None;
+static mut NATIV_REGISTER_SYNC: Option<unsafe extern "C" fn(*const c_char, *const c_char, NativSyncFn)> = None;
 #[cfg(all(target_os = "android", not(unified)))]
-static mut NATIV_REGISTER_ASYNC: Option<unsafe extern "C" fn(*const c_char, *const c_char, RNAAsyncFn)> = None;
+static mut NATIV_REGISTER_ASYNC: Option<unsafe extern "C" fn(*const c_char, *const c_char, NativAsyncFn)> = None;
 
 #[cfg(all(target_os = "android", not(unified)))]
 #[unsafe(no_mangle)]
@@ -644,8 +644,8 @@ ${asyncRegistrations.map(r => r.replace(/nativ_register_async/g, 'reg')).join('\
 // All code is in the same .so — symbols resolved at link time.
 #[cfg(all(target_os = "android", unified))]
 unsafe extern "C" {
-    fn nativ_register_sync(module_id: *const c_char, fn_name: *const c_char, f: RNASyncFn);
-    fn nativ_register_async(module_id: *const c_char, fn_name: *const c_char, f: RNAAsyncFn);
+    fn nativ_register_sync(module_id: *const c_char, fn_name: *const c_char, f: NativSyncFn);
+    fn nativ_register_async(module_id: *const c_char, fn_name: *const c_char, f: NativAsyncFn);
 }
 
 #[cfg(all(target_os = "android", unified))]

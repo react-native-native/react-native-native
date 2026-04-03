@@ -21,8 +21,8 @@ include("${_PREFAB}/fbjni/fbjniConfig.cmake")
 include("${_PREFAB}/ReactAndroid/ReactAndroidConfig.cmake")
 
 add_library(nativruntime SHARED
-    FerrumRuntime.cpp
-    RNABindingsInstaller.cpp
+    NativRuntime.cpp
+    NativBindingsInstaller.cpp
 )
 
 target_link_libraries(nativruntime

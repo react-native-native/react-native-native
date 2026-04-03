@@ -1,4 +1,4 @@
-// FerrumCppRuntime.mm — C++ function registry + JSI bridge.
+// NativRuntime.mm — C++ function registry + JSI bridge.
 //
 // 1. Bridge files call nativ_register_sync/async at +load time.
 // 2. When the JS runtime is ready, we install global.__nativ with callSync/callAsync.
@@ -16,15 +16,15 @@
 #include <mutex>
 #include <vector>
 
-#import "FerrumCppRuntime.h"
+#import "NativRuntime.h"
 
 using namespace facebook;
 
 // ─── Registry ──────────────────────────────────────────────────────────
 
 struct FnEntry {
-  RNASyncFn syncFn = nullptr;
-  RNAAsyncFn asyncFn = nullptr;
+  NativSyncFn syncFn = nullptr;
+  NativAsyncFn asyncFn = nullptr;
 };
 
 // key = "moduleId::fnName"
@@ -37,26 +37,26 @@ static std::string makeKey(const char* moduleId, const char* fnName) {
   return std::string(moduleId) + "::" + fnName;
 }
 
-extern "C" void nativ_register_sync(const char* moduleId, const char* fnName, RNASyncFn fn) {
+extern "C" void nativ_register_sync(const char* moduleId, const char* fnName, NativSyncFn fn) {
   getRegistry()[makeKey(moduleId, fnName)].syncFn = fn;
-  NSLog(@"[FerrumCpp] registered sync: %s::%s", moduleId, fnName);
+  NSLog(@"[Nativ] registered sync: %s::%s", moduleId, fnName);
 }
 
-extern "C" void nativ_register_async(const char* moduleId, const char* fnName, RNAAsyncFn fn) {
+extern "C" void nativ_register_async(const char* moduleId, const char* fnName, NativAsyncFn fn) {
   getRegistry()[makeKey(moduleId, fnName)].asyncFn = fn;
-  NSLog(@"[FerrumCpp] registered async: %s::%s", moduleId, fnName);
+  NSLog(@"[Nativ] registered async: %s::%s", moduleId, fnName);
 }
 
 // ─── Component render registry ────────────────────────────────────────
 
-static std::unordered_map<std::string, FerrumRenderFn>& getRenderRegistry() {
-  static std::unordered_map<std::string, FerrumRenderFn> reg;
+static std::unordered_map<std::string, NativRenderFn>& getRenderRegistry() {
+  static std::unordered_map<std::string, NativRenderFn> reg;
   return reg;
 }
 
-extern "C" void nativ_register_render(const char* componentId, FerrumRenderFn fn) {
+extern "C" void nativ_register_render(const char* componentId, NativRenderFn fn) {
   getRenderRegistry()[std::string(componentId)] = fn;
-  NSLog(@"[FerrumCpp] registered render: %s", componentId);
+  NSLog(@"[Nativ] registered render: %s", componentId);
 }
 
 // ─── Props storage ─────────────────────────────────────────────────────
@@ -199,7 +199,7 @@ extern "C" int nativ_jsi_is_null(void* runtime, void* object, const char* prop_n
 
 // ─── JSI installation ──────────────────────────────────────────────────
 
-static void installRNARuntime(jsi::Runtime &rt, std::shared_ptr<facebook::react::CallInvoker> callInvoker = nullptr) {
+static void installNativRuntime(jsi::Runtime &rt, std::shared_ptr<facebook::react::CallInvoker> callInvoker = nullptr) {
   g_callInvoker = callInvoker;
   // Props from a previous runtime are now invalid — the old runtime is gone.
   // We can't destroy jsi::Objects tied to a dead runtime (invalidate() crashes).
@@ -289,7 +289,7 @@ static void installRNARuntime(jsi::Runtime &rt, std::shared_ptr<facebook::react:
               auto invoker = g_callInvoker;
 
               // Context struct for C callback bridge.
-              // RNAAsyncFn uses plain C function pointers — can't capture.
+              // NativAsyncFn uses plain C function pointers — can't capture.
               // We pass context via a thread-local pointer.
               struct AsyncCtx {
                 std::shared_ptr<jsi::Function> resolve;
@@ -388,7 +388,7 @@ static void installRNARuntime(jsi::Runtime &rt, std::shared_ptr<facebook::react:
 
         // Synchronous download to app sandbox (PoC — production would be async)
         NSError *err = nil;
-        NSLog(@"[FerrumCpp] Downloading dylib from: %@", url);
+        NSLog(@"[Nativ] Downloading dylib from: %@", url);
         // Use NSURLRequest with no-cache policy to bypass NSURLCache
         NSURLRequest *request = [NSURLRequest requestWithURL:url
                                                  cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
@@ -404,18 +404,18 @@ static void installRNARuntime(jsi::Runtime &rt, std::shared_ptr<facebook::react:
         }
 
         // Verify we got a Mach-O file (magic: 0xFEEDFACF for 64-bit)
-        NSLog(@"[FerrumCpp] Downloaded %lu bytes", (unsigned long)data.length);
+        NSLog(@"[Nativ] Downloaded %lu bytes", (unsigned long)data.length);
         if (data.length >= 4) {
           uint32_t magic = 0;
           [data getBytes:&magic length:4];
-          NSLog(@"[FerrumCpp] Magic: 0x%08X (expected 0xFEEDFACF for arm64)", magic);
+          NSLog(@"[Nativ] Magic: 0x%08X (expected 0xFEEDFACF for arm64)", magic);
           if (magic != 0xFEEDFACF && magic != 0xCFFAEDFE) {
             // Not a Mach-O — log first bytes for debugging
             const char *bytes = (const char *)data.bytes;
             NSString *preview = [[NSString alloc] initWithBytes:bytes
                                                          length:MIN(100, data.length)
                                                        encoding:NSUTF8StringEncoding];
-            NSLog(@"[FerrumCpp] Not Mach-O! First bytes: %@", preview ?: @"(binary)");
+            NSLog(@"[Nativ] Not Mach-O! First bytes: %@", preview ?: @"(binary)");
             throw jsi::JSError(rt, "Downloaded data is not a valid Mach-O dylib");
           }
         }
@@ -440,11 +440,11 @@ static void installRNARuntime(jsi::Runtime &rt, std::shared_ptr<facebook::react:
         void *handle = dlopen(localPath.UTF8String, RTLD_NOW | RTLD_GLOBAL);
         if (!handle) {
           auto msg = std::string("dlopen failed: ") + (dlerror() ?: "unknown");
-          NSLog(@"[FerrumCpp] %s", msg.c_str());
+          NSLog(@"[Nativ] %s", msg.c_str());
           throw jsi::JSError(rt, msg);
         }
 
-        NSLog(@"[FerrumCpp] Hot-reloaded dylib: %@", localPath);
+        NSLog(@"[Nativ] Hot-reloaded dylib: %@", localPath);
         return jsi::Value(true);
       });
 #endif
@@ -491,7 +491,7 @@ static void installRNARuntime(jsi::Runtime &rt, std::shared_ptr<facebook::react:
 
   rt.global().setProperty(rt, "__nativ", std::move(rnaObj));
   g_runtime = &rt;  // Store for render function prop access
-  NSLog(@"[FerrumCpp] __rna installed with %lu registered functions", (unsigned long)getRegistry().size());
+  NSLog(@"[Nativ] __nativ installed with %lu registered functions", (unsigned long)getRegistry().size());
 }
 
 // ─── TurboModule with JSI bindings ─────────────────────────────────────
@@ -512,12 +512,12 @@ static void installRNARuntime(jsi::Runtime &rt, std::shared_ptr<facebook::react:
 #import "NativFabricSpec.h"
 #endif
 
-@interface RNARuntimeModule : NSObject <NativeRNARuntimeSpec, RCTTurboModuleWithJSIBindings>
+@interface NativRuntimeModule : NSObject <NativeNativRuntimeSpec, RCTTurboModuleWithJSIBindings>
 @end
 
-@implementation RNARuntimeModule
+@implementation NativRuntimeModule
 
-RCT_EXPORT_MODULE(RNARuntime)
+RCT_EXPORT_MODULE(NativRuntime)
 
 - (NSDictionary *)getConstants {
   return @{};
@@ -525,13 +525,13 @@ RCT_EXPORT_MODULE(RNARuntime)
 
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params {
-  return std::make_shared<facebook::react::NativeRNARuntimeSpecJSI>(params);
+  return std::make_shared<facebook::react::NativeNativRuntimeSpecJSI>(params);
 }
 
 - (void)installJSIBindingsWithRuntime:(facebook::jsi::Runtime &)runtime
                           callInvoker:(const std::shared_ptr<facebook::react::CallInvoker> &)callinvoker
 {
-  installRNARuntime(runtime, callinvoker);
+  installNativRuntime(runtime, callinvoker);
 }
 
 + (BOOL)requiresMainQueueSetup {
@@ -544,6 +544,6 @@ RCT_EXPORT_MODULE(RNARuntime)
 extern "C" void nativ_cpp_install(void *runtimePtr) {
   if (!runtimePtr) return;
   auto &rt = *reinterpret_cast<jsi::Runtime *>(runtimePtr);
-  installRNARuntime(rt);
+  installNativRuntime(rt);
 }
 

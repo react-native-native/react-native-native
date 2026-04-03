@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": {
+    "podName": "NativFabric"
+  },
+  "android": {
+    "packageClass": "com.nativfabric.NativContainerPackage"
+  }
+}

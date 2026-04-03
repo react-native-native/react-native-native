@@ -28,9 +28,9 @@ function resolveOnce() {
   }
 
   if (_ndkPath) {
-    console.log(`[ferrum] Android NDK: ${_ndkPath}`);
+    console.log(`[nativ] Android NDK: ${_ndkPath}`);
   } else {
-    console.warn('[ferrum] Android NDK not found');
+    console.warn('[nativ] Android NDK not found');
   }
 }
 
@@ -88,14 +88,14 @@ function compileAndroidCppDylib(filepath, includePaths, exports, projectRoot, { 
   try {
     execSync(cmd.join(' '), { stdio: 'pipe', encoding: 'utf8' });
   } catch (err) {
-    console.error(`[ferrum] Android C++ compile failed: ${name}`);
+    console.error(`[nativ] Android C++ compile failed: ${name}`);
     console.error((err.stderr || '').slice(0, 1000));
     return null;
   }
 
   // No signing needed on Android
   const size = fs.statSync(soPath).size;
-  console.log(`[ferrum] Built ${moduleId}.so (${(size / 1024).toFixed(1)}KB)`);
+  console.log(`[nativ] Built ${moduleId}.so (${(size / 1024).toFixed(1)}KB)`);
   return soPath;
 }
 
@@ -110,8 +110,8 @@ function generateAndroidBridge(exports, moduleId) {
     '',
     '// Registry C API — resolved via dlsym (Android namespace isolation)',
     'extern "C" {',
-    'typedef const char* (*RNASyncFn)(const char*);',
-    'typedef void (*RNARegisterSyncFn)(const char*, const char*, RNASyncFn);',
+    'typedef const char* (*NativSyncFn)(const char*);',
+    'typedef void (*RNARegisterSyncFn)(const char*, const char*, NativSyncFn);',
     '}',
     '',
     '// JSON parse helpers',
@@ -236,8 +236,8 @@ ${propExtractions}
 }
 
 extern "C" {
-  typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
-  void nativ_register_render(const char*, FerrumRenderFn);
+  typedef void (*NativRenderFn)(void*, float, float, void*, void*);
+  void nativ_register_render(const char*, NativRenderFn);
 }
 
 __attribute__((constructor))
@@ -263,13 +263,13 @@ static void register_${baseName}() {
   try {
     execSync(cmd.join(' '), { stdio: 'pipe', encoding: 'utf8' });
   } catch (err) {
-    console.error(`[ferrum] Android component compile failed: ${baseName}`);
+    console.error(`[nativ] Android component compile failed: ${baseName}`);
     console.error((err.stderr || '').slice(0, 1000));
     return null;
   }
 
   const size = fs.statSync(soPath).size;
-  console.log(`[ferrum] Built nativ_${baseName}.so component (${(size / 1024).toFixed(1)}KB)`);
+  console.log(`[nativ] Built nativ_${baseName}.so component (${(size / 1024).toFixed(1)}KB)`);
   return soPath;
 }
 
@@ -302,7 +302,7 @@ function compileAndroidRustDylib(filepath, projectRoot, { target = 'arm64-v8a' }
     '--lib',
   ];
 
-  console.log(`[ferrum] Compiling ${name}.rs for Android (${target}) via cargo...`);
+  console.log(`[nativ] Compiling ${name}.rs for Android (${target}) via cargo...`);
   try {
     execSync(cmd.join(' '), {
       stdio: 'pipe',
@@ -315,7 +315,7 @@ function compileAndroidRustDylib(filepath, projectRoot, { target = 'arm64-v8a' }
       },
     });
   } catch (err) {
-    console.error(`[ferrum] Android Rust compile failed: ${name}.rs`);
+    console.error(`[nativ] Android Rust compile failed: ${name}.rs`);
     console.error((err.stderr || '').slice(0, 2000));
     return null;
   }
@@ -324,11 +324,11 @@ function compileAndroidRustDylib(filepath, projectRoot, { target = 'arm64-v8a' }
   if (fs.existsSync(builtSo)) {
     fs.copyFileSync(builtSo, soPath);
     const size = fs.statSync(soPath).size;
-    console.log(`[ferrum] Built nativ_${moduleId}.so (${(size / 1024).toFixed(1)}KB)`);
+    console.log(`[nativ] Built nativ_${moduleId}.so (${(size / 1024).toFixed(1)}KB)`);
     return soPath;
   }
 
-  console.error(`[ferrum] Built .so not found: ${builtSo}`);
+  console.error(`[nativ] Built .so not found: ${builtSo}`);
   return null;
 }
 

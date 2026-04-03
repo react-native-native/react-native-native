@@ -2,7 +2,7 @@
  * React Native Native — Expo config plugin.
  *
  * Patches:
- * - MainApplication.kt: FerrumBindingsInstaller + FerrumContainerPackage
+ * - MainApplication.kt: NativContainerPackage (via autolinking)
  * - iOS: generates podspec in .nativ/generated/ for static linking in release
  */
 

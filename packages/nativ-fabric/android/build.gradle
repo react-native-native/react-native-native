@@ -1,5 +1,5 @@
 buildscript {
-  ext.FerrumFabric = [
+  ext.NativFabric = [
     kotlinVersion: "2.1.20",
     minSdkVersion: 24,
     compileSdkVersion: 36,
@@ -10,7 +10,7 @@ buildscript {
     if (rootProject.ext.has(prop)) {
       return rootProject.ext.get(prop)
     }
-    return FerrumFabric[prop]
+    return NativFabric[prop]
   }
 
   repositories {

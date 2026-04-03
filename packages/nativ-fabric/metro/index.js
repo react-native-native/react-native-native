@@ -2,7 +2,7 @@
  * React Native Native — Metro configuration wrapper.
  *
  * Usage in metro.config.js:
- *   const { withReactNativeNative } = require('./ferrum');
+ *   const { withReactNativeNative } = require('./metro');
  *   module.exports = withReactNativeNative(getDefaultConfig(__dirname));
  */
 
@@ -47,7 +47,7 @@ function withReactNativeNative(config) {
   } catch {}
   fs.writeFileSync(path.join(projectRoot, '.nativ/ios-target'), iosTarget);
   fs.writeFileSync(path.join(projectRoot, '.nativ/android-target'), 'arm64-v8a');
-  console.log(`[ferrum] Build targets: iOS=${iosTarget}, Android=arm64-v8a`);
+  console.log(`[nativ] Build targets: iOS=${iosTarget}, Android=arm64-v8a`);
 
   // ── Kotlin compiler daemon ───────────────────────────────────────────
   startDaemon(projectRoot);
@@ -112,7 +112,7 @@ function withReactNativeNative(config) {
     const isAndroid = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'].includes(target);
     const opts = { target };
 
-    console.log(`[ferrum] On-demand compile: ${origName} for ${target} (${entry.type})`);
+    console.log(`[nativ] On-demand compile: ${origName} for ${target} (${entry.type})`);
 
     // Update last-known target so future transforms compile for this target
     const targetFile = path.join(projectRoot, `.nativ/${isAndroid ? 'android' : 'ios'}-target`);
@@ -148,11 +148,11 @@ function withReactNativeNative(config) {
           c.compileKotlinDex(entry.source, projectRoot);
           break;
         default:
-          console.error(`[ferrum] Unknown module type: ${entry.type}`);
+          console.error(`[nativ] Unknown module type: ${entry.type}`);
           return;
       }
     } catch (e) {
-      console.error(`[ferrum] Compile failed for ${origName}: ${e.message}`);
+      console.error(`[nativ] Compile failed for ${origName}: ${e.message}`);
       return;
     }
 
@@ -222,7 +222,7 @@ function withReactNativeNative(config) {
         const dylibDir = path.join(projectRoot, '.nativ/dylibs');
         try { fs.rmSync(dylibDir, { recursive: true }); } catch {}
         fs.mkdirSync(dylibDir, { recursive: true });
-        console.log('[ferrum] Cleared compiled native cache (.nativ/dylibs/)');
+        console.log('[nativ] Cleared compiled native cache (.nativ/dylibs/)');
       },
     },
   ];

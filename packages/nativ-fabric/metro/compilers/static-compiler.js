@@ -45,7 +45,7 @@ const releaseDir = path.join(genDir, 'release');
 fs.mkdirSync(bridgeDir, { recursive: true });
 fs.mkdirSync(releaseDir, { recursive: true });
 
-console.log(`[ferrum] Static compiler: platform=${platform}, root=${projectRoot}`);
+console.log(`[nativ] Static compiler: platform=${platform}, root=${projectRoot}`);
 
 // ─── Scan for user native files ────────────────────────────────────────
 
@@ -111,8 +111,8 @@ ${propsTypeName ? `  ${propsTypeName} props;\n${propExtractions}\n  mount(view, 
 }
 
 extern "C" {
-  typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
-  void nativ_register_render(const char*, FerrumRenderFn);
+  typedef void (*NativRenderFn)(void*, float, float, void*, void*);
+  void nativ_register_render(const char*, NativRenderFn);
 }
 
 __attribute__((constructor, used))
@@ -122,7 +122,7 @@ static void register_${baseName}() {
 `;
       const ext = filepath.endsWith('.mm') ? 'mm' : 'cpp';
       fs.writeFileSync(path.join(bridgeDir, `nativ_${baseName}_bridge.${ext}`), bridgeSrc);
-      console.log(`[ferrum] Bridge: ${baseName} (component)`);
+      console.log(`[nativ] Bridge: ${baseName} (component)`);
     } else {
       const exports = extractCppExports(filepath, []);
       if (exports.length === 0) continue;
@@ -136,7 +136,7 @@ static void register_${baseName}() {
       const userInclude = `#include "${path.resolve(filepath)}"\n\n`;
       const ext = filepath.endsWith('.mm') ? 'mm' : 'cpp';
       fs.writeFileSync(path.join(bridgeDir, `${moduleId}_bridge.${ext}`), userInclude + bridgeSrc);
-      console.log(`[ferrum] Bridge: ${moduleId} (${exports.length} functions)`);
+      console.log(`[nativ] Bridge: ${moduleId} (${exports.length} functions)`);
     }
   }
 }
@@ -169,7 +169,7 @@ function buildRustStatic() {
     return rsFiles.every(f => fs.statSync(f).mtimeMs < libMtime);
   });
   if (allUpToDate) {
-    console.log(`[ferrum] Rust: all targets up to date, skipping`);
+    console.log(`[nativ] Rust: all targets up to date, skipping`);
     return;
   }
 
@@ -235,7 +235,7 @@ lto = true
   }
 
   if (modules.length === 0) {
-    console.log('[ferrum] Rust: no exported modules found');
+    console.log('[nativ] Rust: no exported modules found');
     return;
   }
 
@@ -270,7 +270,7 @@ lto = true
       }
     } catch {}
     if (!ndkBinDir) {
-      console.error('[ferrum] Android NDK not found — cannot build Rust for Android');
+      console.error('[nativ] Android NDK not found — cannot build Rust for Android');
       return;
     }
   }
@@ -298,11 +298,11 @@ lto = true
       env.RUSTFLAGS = '--cfg unified -C link-arg=-llog';
     }
 
-    console.log(`[ferrum] Compiling Rust (${modules.length} modules, ${abi} → ${target})...`);
+    console.log(`[nativ] Compiling Rust (${modules.length} modules, ${abi} → ${target})...`);
     try {
       execSync(cmd.join(' '), { stdio: 'pipe', encoding: 'utf8', env });
     } catch (err) {
-      console.error(`[ferrum] Rust compile failed for ${abi}`);
+      console.error(`[nativ] Rust compile failed for ${abi}`);
       console.error((err.stderr || '').slice(0, 3000));
       continue;
     }
@@ -311,9 +311,9 @@ lto = true
     if (fs.existsSync(builtLib)) {
       fs.copyFileSync(builtLib, outputLib);
       const size = fs.statSync(outputLib).size;
-      console.log(`[ferrum] Built ${abi}/libnativ_user.a (${(size / 1024).toFixed(1)}KB)`);
+      console.log(`[nativ] Built ${abi}/libnativ_user.a (${(size / 1024).toFixed(1)}KB)`);
     } else {
-      console.error(`[ferrum] libnativ_user.a not found at ${builtLib}`);
+      console.error(`[nativ] libnativ_user.a not found at ${builtLib}`);
     }
   }
 }
@@ -334,8 +334,8 @@ function buildSwiftBridges() {
     if (isComp) {
       const renderFnName = `nativ_${moduleId}_render`;
       fs.writeFileSync(path.join(bridgeDir, `${moduleId}_reg.c`), `
-typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
-extern void nativ_register_render(const char*, FerrumRenderFn);
+typedef void (*NativRenderFn)(void*, float, float, void*, void*);
+extern void nativ_register_render(const char*, NativRenderFn);
 extern void ${renderFnName}(void*, float, float, void*, void*);
 
 __attribute__((constructor, used))
@@ -343,7 +343,7 @@ void nativ_register_${moduleId}(void) {
   nativ_register_render("nativ.${moduleId}", ${renderFnName});
 }
 `);
-      console.log(`[ferrum] Swift bridge: ${moduleId} (component)`);
+      console.log(`[nativ] Swift bridge: ${moduleId} (component)`);
     } else {
       const exports = extractSwiftExports(filepath);
       if (exports.length === 0) continue;
@@ -356,8 +356,8 @@ void nativ_register_${moduleId}(void) {
       ).join('\n');
 
       fs.writeFileSync(path.join(bridgeDir, `${moduleId}_reg.c`), `
-typedef const char* (*RNASyncFn)(const char*);
-extern void nativ_register_sync(const char*, const char*, RNASyncFn);
+typedef const char* (*NativSyncFn)(const char*);
+extern void nativ_register_sync(const char*, const char*, NativSyncFn);
 ${declarations}
 
 __attribute__((constructor, used))
@@ -384,7 +384,7 @@ func _nativ_${fn.name}(_ argsJson: UnsafePointer<CChar>) -> UnsafePointer<CChar>
       }).join('\n');
       fs.writeFileSync(path.join(bridgeDir, `${moduleId}_bridge.swift`), swiftWrappers);
 
-      console.log(`[ferrum] Swift bridge: ${moduleId} (${exports.length} functions)`);
+      console.log(`[nativ] Swift bridge: ${moduleId} (${exports.length} functions)`);
     }
   }
 }
@@ -396,7 +396,7 @@ function buildKotlinSources() {
   const ktFiles = findUserFiles(['.kt']);
   if (ktFiles.length === 0) return [];
 
-  const ktSrcDir = path.join(genDir, 'kotlin-src/com/ferrumfabric/generated');
+  const ktSrcDir = path.join(genDir, 'kotlin-src/com/nativfabric/generated');
   fs.mkdirSync(ktSrcDir, { recursive: true });
   const registeredModules = [];
 
@@ -470,7 +470,7 @@ function buildKotlinSources() {
         fs.writeFileSync(path.join(ktSrcDir, `${className}.kt`), wrapper);
       }
       registeredModules.push(moduleId);
-      console.log(`[ferrum] Kotlin wrapper: ${moduleId} (component)`);
+      console.log(`[nativ] Kotlin wrapper: ${moduleId} (component)`);
 
     } else if (functions.length > 0) {
       const cleanSrc = userSrc
@@ -513,7 +513,7 @@ function buildKotlinSources() {
       lines.push('            else -> "null"', '        }', '    }', '}');
       fs.writeFileSync(path.join(ktSrcDir, `${className}.kt`), lines.join('\n'));
       registeredModules.push(moduleId);
-      console.log(`[ferrum] Kotlin wrapper: ${moduleId} (${functions.length} functions)`);
+      console.log(`[nativ] Kotlin wrapper: ${moduleId} (${functions.length} functions)`);
     }
   }
   return registeredModules;
@@ -531,27 +531,27 @@ const kotlinModules = rustOnly ? [] : buildKotlinSources();
 // Generate Kotlin registry class that registers all modules at init time.
 // This is compiled by Gradle and auto-registers when the class is loaded.
 if (kotlinModules && kotlinModules.length > 0) {
-  const ktSrcDir = path.join(genDir, 'kotlin-src/com/ferrumfabric/generated');
+  const ktSrcDir = path.join(genDir, 'kotlin-src/com/nativfabric/generated');
   const registrations = kotlinModules.map(moduleId => {
     const className = `RnaModule_${moduleId}`;
     return `        try {
             val clazz = Class.forName("com.nativfabric.generated.${className}")
             try {
                 val dispatch = clazz.getMethod("dispatch", String::class.java, String::class.java)
-                com.nativfabric.FerrumRuntime.registerKotlinDispatch("${moduleId}", dispatch)
+                com.nativfabric.NativRuntime.registerKotlinDispatch("${moduleId}", dispatch)
             } catch (_: NoSuchMethodException) {}
             try {
                 val render = clazz.getMethod("render", android.view.ViewGroup::class.java, Map::class.java)
-                com.nativfabric.FerrumRuntime.registerKotlinRenderer("nativ.${moduleId}", render)
+                com.nativfabric.NativRuntime.registerKotlinRenderer("nativ.${moduleId}", render)
             } catch (_: NoSuchMethodException) {}
         } catch (e: Exception) {
-            android.util.Log.w("FerrumRegistry", "Module ${moduleId}: \${e.message}")
+            android.util.Log.w("NativRegistry", "Module ${moduleId}: \${e.message}")
         }`;
   }).join('\n');
 
-  fs.writeFileSync(path.join(ktSrcDir, 'FerrumModuleRegistry.kt'), `package com.nativfabric.generated
+  fs.writeFileSync(path.join(ktSrcDir, 'NativModuleRegistry.kt'), `package com.nativfabric.generated
 
-object FerrumModuleRegistry {
+object NativModuleRegistry {
     init {
 ${registrations}
     }
@@ -559,7 +559,7 @@ ${registrations}
     fun ensure() {} // Called to trigger class loading
 }
 `);
-  console.log(`[ferrum] Kotlin registry: ${kotlinModules.length} modules`);
+  console.log(`[nativ] Kotlin registry: ${kotlinModules.length} modules`);
 }
 
-console.log(`[ferrum] Static compilation done in ${Date.now() - t0}ms`);
+console.log(`[nativ] Static compilation done in ${Date.now() - t0}ms`);

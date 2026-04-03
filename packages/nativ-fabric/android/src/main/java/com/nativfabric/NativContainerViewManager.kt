@@ -5,22 +5,22 @@ import com.facebook.react.uimanager.SimpleViewManager
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.ViewManagerDelegate
 import com.facebook.react.uimanager.annotations.ReactProp
-import com.facebook.react.viewmanagers.FerrumContainerManagerInterface
-import com.facebook.react.viewmanagers.FerrumContainerManagerDelegate
+import com.facebook.react.viewmanagers.NativContainerManagerInterface
+import com.facebook.react.viewmanagers.NativContainerManagerDelegate
 
-@ReactModule(name = FerrumContainerViewManager.NAME)
-class FerrumContainerViewManager : SimpleViewManager<FerrumContainerView>(),
-    FerrumContainerManagerInterface<FerrumContainerView> {
+@ReactModule(name = NativContainerViewManager.NAME)
+class NativContainerViewManager : SimpleViewManager<NativContainerView>(),
+    NativContainerManagerInterface<NativContainerView> {
 
-    private val delegate: ViewManagerDelegate<FerrumContainerView> =
-        FerrumContainerManagerDelegate(this)
+    private val delegate: ViewManagerDelegate<NativContainerView> =
+        NativContainerManagerDelegate(this)
 
-    override fun getDelegate(): ViewManagerDelegate<FerrumContainerView> = delegate
+    override fun getDelegate(): ViewManagerDelegate<NativContainerView> = delegate
 
     override fun getName(): String = NAME
 
-    override fun createViewInstance(context: ThemedReactContext): FerrumContainerView {
-        val view = FerrumContainerView(context)
+    override fun createViewInstance(context: ThemedReactContext): NativContainerView {
+        val view = NativContainerView(context)
         view.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             val w = right - left
             val h = bottom - top
@@ -34,17 +34,17 @@ class FerrumContainerViewManager : SimpleViewManager<FerrumContainerView>(),
     }
 
     @ReactProp(name = "componentId")
-    override fun setComponentId(view: FerrumContainerView?, value: String?) {
+    override fun setComponentId(view: NativContainerView?, value: String?) {
         view?.tag = value
         view?.let { renderComponent(it) }
     }
 
     @ReactProp(name = "propsJson")
-    override fun setPropsJson(view: FerrumContainerView?, value: String?) {
+    override fun setPropsJson(view: NativContainerView?, value: String?) {
         view?.let { renderComponent(it) }
     }
 
-    private fun renderComponent(view: FerrumContainerView) {
+    private fun renderComponent(view: NativContainerView) {
         val componentId = view.tag as? String ?: return
         if (view.width <= 0 || view.height <= 0) {
             view.post { renderComponent(view) }
@@ -53,10 +53,10 @@ class FerrumContainerViewManager : SimpleViewManager<FerrumContainerView>(),
 
         // Render directly into the view
         view.removeAllViews()
-        FerrumRuntime.tryRender(componentId, view, view.width.toFloat(), view.height.toFloat())
+        NativRuntime.tryRender(componentId, view, view.width.toFloat(), view.height.toFloat())
     }
 
     companion object {
-        const val NAME = "FerrumContainer"
+        const val NAME = "NativContainer"
     }
 }

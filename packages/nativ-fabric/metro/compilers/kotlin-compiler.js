@@ -42,7 +42,7 @@ function resolveOnce(projectRoot) {
         _composePlugin = cached._composePlugin;
         _composeJarsDir = cached._composeJarsDir;
         _composePretransform = cached._composePretransform;
-        if (_kotlincCmd) console.log(`[ferrum] kotlinc: resolved (cached)`);
+        if (_kotlincCmd) console.log(`[nativ] kotlinc: resolved (cached)`);
         return;
       }
     } catch {}
@@ -210,11 +210,11 @@ function resolveOnce(projectRoot) {
     if (fs.existsSync(ptJar)) _composePretransform = ptJar;
   }
 
-  if (_kotlincCmd) console.log(`[ferrum] kotlinc: ${_kotlincCmd.split(' ')[0] === 'java' ? 'embeddable JAR' : _kotlincCmd}`);
-  if (_d8Path) console.log(`[ferrum] d8: ${_d8Path}`);
-  if (_androidJar) console.log(`[ferrum] android.jar: ${path.basename(path.dirname(_androidJar))}`);
-  if (_kotlincComposeCmd) console.log(`[ferrum] compose: full compiler + plugin + pretransform`);
-  else if (_composePlugin) console.log(`[ferrum] compose: plugin found but missing full compiler`);
+  if (_kotlincCmd) console.log(`[nativ] kotlinc: ${_kotlincCmd.split(' ')[0] === 'java' ? 'embeddable JAR' : _kotlincCmd}`);
+  if (_d8Path) console.log(`[nativ] d8: ${_d8Path}`);
+  if (_androidJar) console.log(`[nativ] android.jar: ${path.basename(path.dirname(_androidJar))}`);
+  if (_kotlincComposeCmd) console.log(`[nativ] compose: full compiler + plugin + pretransform`);
+  else if (_composePlugin) console.log(`[nativ] compose: plugin found but missing full compiler`);
 
   // Cache resolved paths for fast startup in Metro workers
   if (cacheFile) {
@@ -234,7 +234,7 @@ function resolveOnce(projectRoot) {
 function compileKotlinDex(filepath, projectRoot) {
   resolveOnce(projectRoot);
   if (!_kotlincCmd || !_d8Path || !_androidJar) {
-    console.warn('[ferrum] Kotlin toolchain incomplete — skipping compilation');
+    console.warn('[nativ] Kotlin toolchain incomplete — skipping compilation');
     return null;
   }
 
@@ -248,7 +248,7 @@ function compileKotlinDex(filepath, projectRoot) {
   const { functions, isComponent, componentProps } = extractKotlinExports(filepath);
 
   if (!isComponent && functions.length === 0) {
-    console.warn(`[ferrum] No @nativ_export/@nativ_component in ${name}.kt`);
+    console.warn(`[nativ] No @nativ_export/@nativ_component in ${name}.kt`);
     return null;
   }
 
@@ -261,7 +261,7 @@ function compileKotlinDex(filepath, projectRoot) {
   const dexPath = path.join(outputDir, dexName);
 
   if (fs.existsSync(dexPath)) {
-    console.log(`[ferrum] ${name}.kt cache hit (${srcHash})`);
+    console.log(`[nativ] ${name}.kt cache hit (${srcHash})`);
     return dexPath;
   }
 
@@ -548,11 +548,11 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
       if (result.d8Ms !== undefined && result.d8Ms > 0) {
         // Daemon did kotlinc+d8 — skip the separate d8 step below
         const size = fs.existsSync(dexPath) ? fs.statSync(dexPath).size : 0;
-        console.log(`[ferrum] ${moduleId}.kt: ${via}, total ${Date.now() - _t0}ms → ${(size / 1024).toFixed(1)}KB`);
+        console.log(`[nativ] ${moduleId}.kt: ${via}, total ${Date.now() - _t0}ms → ${(size / 1024).toFixed(1)}KB`);
         return dexPath;
       }
     } else if (result) {
-      console.error(`[ferrum] Daemon compile failed: ${result.error?.slice(0, 500)}`);
+      console.error(`[nativ] Daemon compile failed: ${result.error?.slice(0, 500)}`);
     }
   }
 
@@ -560,14 +560,14 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
     try {
       execSync(kotlincCmd.join(' '), { stdio: 'pipe', encoding: 'utf8' });
     } catch (err) {
-      console.error(`[ferrum] Kotlin compile failed: ${moduleId}.kt`);
+      console.error(`[nativ] Kotlin compile failed: ${moduleId}.kt`);
       console.error((err.stderr || '').slice(0, 2000));
       return null;
     }
   }
 
   const _t1 = Date.now();
-  console.log(`[ferrum] ${moduleId}.kt: kotlinc ${via} ${_t1 - _t0}ms`);
+  console.log(`[nativ] ${moduleId}.kt: kotlinc ${via} ${_t1 - _t0}ms`);
 
   // Step 2: d8 → .dex
   // Find all .class files
@@ -582,7 +582,7 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
   findClasses(classDir);
 
   if (classFiles.length === 0) {
-    console.error(`[ferrum] No .class files produced for ${moduleId}.kt`);
+    console.error(`[nativ] No .class files produced for ${moduleId}.kt`);
     return null;
   }
 
@@ -617,14 +617,14 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
       fs.renameSync(d8Output, dexPath);
     }
   } catch (err) {
-    console.error(`[ferrum] d8 failed: ${moduleId}`);
+    console.error(`[nativ] d8 failed: ${moduleId}`);
     console.error((err.stderr || '').slice(0, 1000));
     return null;
   }
 
   const _t3 = Date.now();
   const size = fs.statSync(dexPath).size;
-  console.log(`[ferrum] ${moduleId}.kt: d8 ${_t3 - _t2}ms → ${(size / 1024).toFixed(1)}KB (total ${_t3 - _t0}ms)`);
+  console.log(`[nativ] ${moduleId}.kt: d8 ${_t3 - _t2}ms → ${(size / 1024).toFixed(1)}KB (total ${_t3 - _t0}ms)`);
 
   return dexPath;
 }

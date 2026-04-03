@@ -98,7 +98,7 @@ function generateCompileCommands(projectRoot, includePaths) {
   }
 
   fs.writeFileSync(outPath, json);
-  console.log(`[ferrum] Generated compile_commands.json (${entries.length} files)`);
+  console.log(`[nativ] Generated compile_commands.json (${entries.length} files)`);
 }
 
 module.exports = { generateCompileCommands };

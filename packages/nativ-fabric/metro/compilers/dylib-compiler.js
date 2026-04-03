@@ -19,7 +19,7 @@ function getSdkPath(target) {
       encoding: 'utf8',
     }).trim();
   } catch {
-    console.error(`[ferrum] No iOS SDK found for ${sdk}`);
+    console.error(`[nativ] No iOS SDK found for ${sdk}`);
   }
   return _sdkPaths[target] || null;
 }
@@ -71,7 +71,7 @@ function resolveOnce(projectRoot) {
           );
           if (certSubject.includes(`OU=${appTeamId}`)) {
             _signingIdentity = name;
-            console.log(`[ferrum] Signing: ${name} (team ${appTeamId})`);
+            console.log(`[nativ] Signing: ${name} (team ${appTeamId})`);
             break;
           }
         } catch {}
@@ -169,7 +169,7 @@ function compileDylib(filepath, includePaths, exports, projectRoot, { target = '
   try {
     execSync(cmd.join(' '), { stdio: 'pipe', encoding: 'utf8' });
   } catch (err) {
-    console.error(`[ferrum] dylib compile failed: ${path.basename(filepath)}`);
+    console.error(`[nativ] dylib compile failed: ${path.basename(filepath)}`);
     console.error((err.stderr || '').slice(0, 1000));
     return null;
   }
@@ -187,7 +187,7 @@ function compileDylib(filepath, includePaths, exports, projectRoot, { target = '
   }
 
   const size = fs.statSync(dylibPath).size;
-  console.log(`[ferrum] Built ${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
+  console.log(`[nativ] Built ${moduleId}.dylib (${(size / 1024).toFixed(1)}KB)`);
   return dylibPath;
 }
 
@@ -208,10 +208,10 @@ function generateBridge(exports, moduleId) {
   }
 
   lines.push('', 'extern "C" {');
-  lines.push('typedef const char* (*RNASyncFn)(const char*);');
-  lines.push('typedef void (*RNAAsyncFn)(const char*, void (*)(const char*), void (*)(const char*, const char*));');
-  lines.push('void nativ_register_sync(const char*, const char*, RNASyncFn);');
-  lines.push('void nativ_register_async(const char*, const char*, RNAAsyncFn);');
+  lines.push('typedef const char* (*NativSyncFn)(const char*);');
+  lines.push('typedef void (*NativAsyncFn)(const char*, void (*)(const char*), void (*)(const char*, const char*));');
+  lines.push('void nativ_register_sync(const char*, const char*, NativSyncFn);');
+  lines.push('void nativ_register_async(const char*, const char*, NativAsyncFn);');
   lines.push('');
 
   // JSON string escaping helper
@@ -401,8 +401,8 @@ ${propExtractions}
 }
 
 extern "C" {
-  typedef void (*FerrumRenderFn)(void*, float, float, void*, void*);
-  void nativ_register_render(const char*, FerrumRenderFn);
+  typedef void (*NativRenderFn)(void*, float, float, void*, void*);
+  void nativ_register_render(const char*, NativRenderFn);
 }
 
 __attribute__((constructor))
@@ -455,7 +455,7 @@ static void register_${baseName}() {
   try {
     execSync(cmd.join(' '), { stdio: 'pipe', encoding: 'utf8' });
   } catch (err) {
-    console.error(`[ferrum] Component dylib compile failed: ${path.basename(filepath)}`);
+    console.error(`[nativ] Component dylib compile failed: ${path.basename(filepath)}`);
     console.error((err.stderr || '').slice(0, 1000));
     return null;
   }
@@ -467,7 +467,7 @@ static void register_${baseName}() {
   }
 
   const size = fs.statSync(dylibPath).size;
-  console.log(`[ferrum] Built nativ_${baseName}.dylib component (${(size / 1024).toFixed(1)}KB)`);
+  console.log(`[nativ] Built nativ_${baseName}.dylib component (${(size / 1024).toFixed(1)}KB)`);
   return dylibPath;
 }
 

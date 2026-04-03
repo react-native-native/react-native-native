@@ -51,7 +51,7 @@ function startDaemon(projectRoot) {
   ].filter(Boolean);
 
   if (embeddableJars.length < 3) {
-    console.warn('[ferrum] Kotlin JARs not found — daemon not started');
+    console.warn('[nativ] Kotlin JARs not found — daemon not started');
     return;
   }
 
@@ -103,7 +103,7 @@ function startDaemon(projectRoot) {
     fs.statSync(srcPath).mtimeMs > fs.statSync(classFile).mtimeMs;
 
   const launch = () => {
-    console.log('[ferrum] Starting Kotlin compiler daemon...');
+    console.log('[nativ] Starting Kotlin compiler daemon...');
     _daemon = spawn('java', [
       '-Xmx1g',
       '-XX:+UseG1GC',
@@ -125,7 +125,7 @@ function startDaemon(projectRoot) {
     });
     javac.on('close', (code) => {
       if (code === 0) launch();
-      else console.error('[ferrum] Failed to compile Kotlin daemon');
+      else console.error('[nativ] Failed to compile Kotlin daemon');
     });
   } else {
     // Already compiled — launch immediately (still async via spawn)
@@ -142,11 +142,11 @@ function startDaemon(projectRoot) {
       if (s.startsWith('PORT:')) {
         _port = parseInt(s.split(':')[1]);
         fs.writeFileSync(DAEMON_PORT_FILE, String(_port));
-        console.log(`[ferrum] Kotlin daemon ready on port ${_port}`);
+        console.log(`[nativ] Kotlin daemon ready on port ${_port}`);
       }
     });
     _daemon.on('exit', (code) => {
-      console.log(`[ferrum] Kotlin daemon exited (${code})`);
+      console.log(`[nativ] Kotlin daemon exited (${code})`);
       _daemon = null;
       _port = null;
       try { fs.unlinkSync(DAEMON_PORT_FILE); } catch {}

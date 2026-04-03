@@ -1,4 +1,4 @@
-/// RNABindingsInstaller — installs global.__nativ via TurboModuleWithJSIBindings.
+/// NativBindingsInstaller — installs global.__nativ via TurboModuleWithJSIBindings.
 /// Self-contained in rna-fabric. No dependency on expo-ferrum.
 
 #include <fbjni/fbjni.h>
@@ -14,10 +14,10 @@ using namespace facebook;
 
 #define NATIV_LOG(...) __android_log_print(ANDROID_LOG_INFO, "NativRuntime", __VA_ARGS__)
 
-// Defined in FerrumRuntime.cpp (same .so)
+// Defined in NativRuntime.cpp (same .so)
 extern "C" const char* nativ_call_sync(const char*, const char*, const char*);
-typedef void (*RNAAsyncFn)(const char*, void (*)(const char*), void (*)(const char*, const char*));
-extern "C" RNAAsyncFn nativ_get_async_fn(const char*, const char*);
+typedef void (*NativAsyncFn)(const char*, void (*)(const char*), void (*)(const char*, const char*));
+extern "C" NativAsyncFn nativ_get_async_fn(const char*, const char*);
 
 static jsi::Runtime* g_runtime = nullptr;
 static std::shared_ptr<react::CallInvoker> g_callInvoker = nullptr;
@@ -44,9 +44,9 @@ static void installRNA(jsi::Runtime &rt) {
         // Fall back to Kotlin dispatch (.dex modules)
         JNIEnv *env = jni::Environment::current();
         if (env && env->PushLocalFrame(16) == 0) {
-          jclass rtClass = env->FindClass("com/ferrumfabric/FerrumRuntime");
+          jclass rtClass = env->FindClass("com/nativfabric/NativRuntime");
           if (rtClass) {
-            jfieldID instField = env->GetStaticFieldID(rtClass, "INSTANCE", "Lcom/ferrumfabric/FerrumRuntime;");
+            jfieldID instField = env->GetStaticFieldID(rtClass, "INSTANCE", "Lcom/nativfabric/NativRuntime;");
             jobject rtInst = instField ? env->GetStaticObjectField(rtClass, instField) : nullptr;
             if (rtInst) {
               jmethodID callKt = env->GetMethodID(rtClass, "callKotlin",
@@ -207,20 +207,20 @@ static void installRNA(jsi::Runtime &rt) {
           }
         }
 
-        jclass rtClass = env->FindClass("com/ferrumfabric/FerrumRuntime");
+        jclass rtClass = env->FindClass("com/nativfabric/NativRuntime");
         if (rtClass) {
           jfieldID instField = env->GetStaticFieldID(rtClass, "INSTANCE",
-              "Lcom/ferrumfabric/FerrumRuntime;");
+              "Lcom/nativfabric/NativRuntime;");
           jobject rtInst = instField ? env->GetStaticObjectField(rtClass, instField) : nullptr;
 
-          jclass psClass = env->FindClass("com/ferrumfabric/FerrumRuntime$PropsSnapshot");
+          jclass psClass = env->FindClass("com/nativfabric/NativRuntime$PropsSnapshot");
           if (psClass && rtInst) {
             jmethodID psInit = env->GetMethodID(psClass, "<init>",
                 "(Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;)V");
             jobject snapshot = env->NewObject(psClass, psInit, strings, numbers, bools);
 
             jmethodID setProps = env->GetMethodID(rtClass, "setComponentProps",
-                "(Ljava/lang/String;Lcom/ferrumfabric/FerrumRuntime$PropsSnapshot;)V");
+                "(Ljava/lang/String;Lcom/nativfabric/NativRuntime$PropsSnapshot;)V");
             jstring jCompId = env->NewStringUTF(componentId.c_str());
             if (jCompId && snapshot && setProps) {
               env->CallVoidMethod(rtInst, setProps, jCompId, snapshot);
@@ -306,8 +306,8 @@ static void installRNA(jsi::Runtime &rt) {
             moduleId = moduleId.substr(0, lastUs);
           }
 
-          jclass rtClass = env->FindClass("com/ferrumfabric/FerrumRuntime");
-          jfieldID instField = env->GetStaticFieldID(rtClass, "INSTANCE", "Lcom/ferrumfabric/FerrumRuntime;");
+          jclass rtClass = env->FindClass("com/nativfabric/NativRuntime");
+          jfieldID instField = env->GetStaticFieldID(rtClass, "INSTANCE", "Lcom/nativfabric/NativRuntime;");
           jobject rtInst = instField ? env->GetStaticObjectField(rtClass, instField) : nullptr;
           if (rtInst) {
             jmethodID loadDex = env->GetMethodID(rtClass, "loadDex", "(Ljava/lang/String;Ljava/lang/String;)Z");
@@ -366,17 +366,17 @@ static void installRNA(jsi::Runtime &rt) {
 
 // ─── JNI BindingsInstallerHolder for TurboModuleWithJSIBindings ────────
 
-struct RNARuntimeJSIBindings : public jni::JavaClass<RNARuntimeJSIBindings> {
-  static constexpr const char *kJavaDescriptor = "Lcom/ferrumfabric/RNARuntimeModule;";
+struct NativRuntimeJSIBindings : public jni::JavaClass<NativRuntimeJSIBindings> {
+  static constexpr const char *kJavaDescriptor = "Lcom/nativfabric/NativRuntimeModule;";
 
   static void registerNatives() {
     javaClassLocal()->registerNatives({
-        makeNativeMethod("getBindingsInstaller", RNARuntimeJSIBindings::getBindingsInstaller),
+        makeNativeMethod("getBindingsInstaller", NativRuntimeJSIBindings::getBindingsInstaller),
     });
   }
 
   static jni::local_ref<react::BindingsInstallerHolder::javaobject>
-  getBindingsInstaller(jni::alias_ref<RNARuntimeJSIBindings> /*jobj*/) {
+  getBindingsInstaller(jni::alias_ref<NativRuntimeJSIBindings> /*jobj*/) {
     return react::BindingsInstallerHolder::newObjectCxxArgs(
         [](jsi::Runtime &runtime, const std::shared_ptr<react::CallInvoker> &callInvoker) {
           g_callInvoker = callInvoker;
@@ -388,6 +388,6 @@ struct RNARuntimeJSIBindings : public jni::JavaClass<RNARuntimeJSIBindings> {
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
   return jni::initialize(vm, [] {
-    RNARuntimeJSIBindings::registerNatives();
+    NativRuntimeJSIBindings::registerNatives();
   });
 }
