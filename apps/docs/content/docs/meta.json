@@ -12,6 +12,7 @@
     "guides/cpp",
     "guides/kotlin",
     "guides/objc",
+    "guides/swift-android",
     "---",
     "troubleshooting"
   ]

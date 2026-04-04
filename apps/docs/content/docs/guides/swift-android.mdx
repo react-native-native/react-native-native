@@ -1,0 +1,117 @@
+---
+title: Swift on Android
+description: Write cross-platform Swift functions that run on both iOS and Android.
+---
+
+<Callout type="warn">
+**Experimental.** Swift on Android uses the [Swift SDK for Android](https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html), released with Swift 6.3. This feature requires additional toolchain setup and has some limitations.
+</Callout>
+
+Swift functions annotated with `@nativ_export` can now compile and hot-reload on Android — the same `.swift` file runs on both platforms.
+
+```swift title="swift_utils.swift"
+// @nativ_export(sync)
+func swiftGreet(name: String) -> String {
+    return "Hello \(name), from Swift!"
+}
+
+// @nativ_export(sync)
+func swiftFib(n: Int) -> Int {
+    if n <= 1 { return n }
+    var a = 0, b = 1
+    for _ in 2...n {
+        let tmp = a + b
+        a = b
+        b = tmp
+    }
+    return b
+}
+```
+
+```tsx title="App.tsx"
+import { swiftGreet, swiftFib } from './swift_utils';
+
+<Text>{swiftGreet("World")}</Text>
+<Text>fib(10) = {String(swiftFib(10))}</Text>
+```
+
+Same file, same imports — works on both iOS and Android.
+
+## Setup
+
+### 1. Install swiftly (Swift version manager)
+
+```bash
+curl -L https://swiftlang.github.io/swiftly/swiftly-install.sh | bash
+```
+
+On macOS, you may need `util-linux` for `getopt`:
+
+```bash
+brew install util-linux
+export PATH="/opt/homebrew/opt/util-linux/bin:$PATH"
+```
+
+### 2. Install Swift 6.3
+
+```bash
+swiftly install 6.3
+```
+
+Your Xcode Swift (6.2) remains unchanged — React Native Native uses `swiftly run +6.3` only for Android compilation.
+
+### 3. Install the Swift SDK for Android
+
+```bash
+swift sdk install https://download.swift.org/swift-6.3-release/android-sdk/swift-6.3-RELEASE/swift-6.3-RELEASE_android.artifactbundle.tar.gz --checksum 2f2942c4bcea7965a08665206212c66991dabe23725aeec7c4365fc91acad088
+```
+
+### 4. Configure the Android NDK sysroot
+
+The SDK needs access to your Android NDK headers:
+
+```bash
+ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/$(ls ~/Library/Android/sdk/ndk | sort -V | tail -1) \
+  bash ~/Library/org.swift.swiftpm/swift-sdks/swift-6.3-RELEASE_android.artifactbundle/swift-android/scripts/setup-android-sdk.sh
+```
+
+### 5. Verify
+
+```bash
+swift sdk list
+```
+
+You should see an entry containing `android`.
+
+## File naming convention
+
+Use `.ios.swift` for files that use iOS-only frameworks (UIKit, SwiftUI, CoreLocation, etc.):
+
+| File | iOS | Android |
+|------|-----|---------|
+| `utils.swift` | Yes | Yes |
+| `platform_info.ios.swift` | Yes | Skipped |
+| `SwiftCounter.ios.swift` | Yes | Skipped |
+
+Metro automatically resolves the correct file per platform — imports don't need to change.
+
+## Limitations
+
+- **SwiftUI components** are iOS-only. Use `.ios.swift` for any file with `@nativ_component` or `import SwiftUI`.
+- **Foundation** is not available without additional setup. Pure Swift standard library functions work. Avoid `import Foundation` in cross-platform files.
+- **First compile is slow** (~15-30 seconds) because the Swift runtime is statically linked into the `.so`. Subsequent compiles are faster (SPM caches the build).
+- **macOS host only** — the Swift SDK for Android currently supports macOS and Linux hosts, not Windows.
+- **Production builds** — Android production path for Swift is not yet wired up. Hot-reload works in development.
+
+## How it works
+
+Under the hood, React Native Native:
+
+1. Detects the Swift Android SDK via `swift sdk list`
+2. Creates a temporary Swift package for each `.swift` file
+3. Compiles via `swiftly run +6.3 swift build --swift-sdk aarch64-unknown-linux-android28`
+4. Produces a static library (`.a`), then re-links with NDK clang into a self-contained `.so` with the Swift runtime statically linked
+5. Serves the `.so` via Metro — the device loads it via `dlopen`
+6. A C `nativ_init` function exports the `@_cdecl` symbols and registers them with the runtime
+
+No Swift runtime `.so` files need to be installed on the device.
