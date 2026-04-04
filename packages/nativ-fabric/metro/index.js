@@ -19,6 +19,7 @@ function getCompilers() {
     compileCppComponentDylib: require('./compilers/dylib-compiler').compileCppComponentDylib,
     compileRustDylib: require('./compilers/rust-compiler').compileRustDylib,
     compileSwiftDylib: require('./compilers/swift-compiler').compileSwiftDylib,
+    compileSwiftAndroidSo: require('./compilers/swift-compiler').compileSwiftAndroidSo,
     compileAndroidCppDylib: require('./compilers/android-compiler').compileAndroidCppDylib,
     compileAndroidCppComponentDylib: require('./compilers/android-compiler').compileAndroidCppComponentDylib,
     compileAndroidRustDylib: require('./compilers/android-compiler').compileAndroidRustDylib,
@@ -65,7 +66,7 @@ function withReactNativeNative(config) {
   config.transformer.babelTransformerPath = path.resolve(__dirname, 'transformer.js');
 
   // ── Platform-aware resolution ────────────────────────────────────────
-  // .swift/.mm → iOS only, .kt/.java → Android only, .rs/.cpp → both.
+  // .mm → iOS only, .kt/.java → Android only, .swift/.rs/.cpp → both.
   // Bare imports (./Counter) resolve without explicit extension.
   const origResolveRequest = config.resolver.resolveRequest;
   config.resolver.resolveRequest = (context, moduleName, platform) => {
@@ -74,7 +75,7 @@ function withReactNativeNative(config) {
     if (moduleName.startsWith('.') && !path.extname(moduleName)) {
       const platformExts = {
         ios: ['swift', 'mm'],
-        android: ['kt', 'java'],
+        android: ['kt', 'java', 'swift'],
       };
       const sharedExts = ['rs', 'cpp', 'cc'];
       const tryExts = [...(platformExts[platform] || []), ...sharedExts];
@@ -130,7 +131,8 @@ function withReactNativeNative(config) {
           break;
         case 'swift':
         case 'swift-component':
-          c.compileSwiftDylib(entry.source, projectRoot, opts);
+          if (isAndroid) c.compileSwiftAndroidSo(entry.source, projectRoot, opts);
+          else c.compileSwiftDylib(entry.source, projectRoot, opts);
           break;
         case 'cpp': {
           if (!_includePaths) _includePaths = c.getIncludePaths(projectRoot);
@@ -222,10 +224,11 @@ function withReactNativeNative(config) {
       get: async () => null,
       set: async () => {},
       clear: () => {
-        const dylibDir = path.join(projectRoot, '.nativ/dylibs');
-        try { fs.rmSync(dylibDir, { recursive: true }); } catch {}
-        fs.mkdirSync(dylibDir, { recursive: true });
-        console.log('[nativ] Cleared compiled native cache (.nativ/dylibs/)');
+        for (const dir of ['dylibs', 'build', 'swift-android']) {
+          try { fs.rmSync(path.join(projectRoot, '.nativ', dir), { recursive: true }); } catch {}
+        }
+        fs.mkdirSync(path.join(projectRoot, '.nativ/dylibs'), { recursive: true });
+        console.log('[nativ] Cleared compiled native cache (.nativ/)');
       },
     },
   ];

@@ -45,10 +45,13 @@ import GradientBox from './GradientBox';    // ObjC++ component
 |----------|-----------|------------|------------|-----|---------|
 | C++ | Yes | Yes | Yes | Yes | Yes |
 | Objective-C++ | Yes | Yes | Yes | Yes | — |
-| Swift / SwiftUI | Yes | Yes | Yes | Yes | — |
+| Swift | Yes | — | Yes | Yes | Yes* |
+| SwiftUI | — | Yes | Yes | Yes | — |
 | Rust | Yes | Yes | Yes | Yes | Yes |
 | Kotlin | Yes | Yes | Yes | — | Yes |
 | Kotlin + Compose | — | Yes | Yes | — | Yes |
+
+*Swift on Android requires the [Swift SDK for Android](https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html) (Swift 6.3+). Function exports work cross-platform; SwiftUI components are iOS-only.
 
 ## Documentation
 
