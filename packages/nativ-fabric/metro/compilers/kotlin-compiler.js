@@ -149,8 +149,17 @@ function resolveOnce(projectRoot) {
   try {
     const gradleCache = path.join(process.env.HOME || '', '.gradle/caches/modules-2/files-2.1');
     // The original plugin JAR (needs the non-embeddable compiler)
+    // Read Kotlin version to find matching plugin
+    let _cfgVersion = null;
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(projectRoot, '.nativ/nativ.config.json'), 'utf8'));
+      _cfgVersion = cfg.kotlin?.version;
+    } catch {}
+    const pluginFilter = _cfgVersion
+      ? `-name "kotlin-compose-compiler-plugin-${_cfgVersion}.jar"`
+      : `-name "*.jar" -not -name "*sources*"`;
     const plugin = execSync(
-      `find "${gradleCache}/org.jetbrains.kotlin/kotlin-compose-compiler-plugin" -name "*.jar" -not -name "*sources*" 2>/dev/null | sort -V | tail -1`,
+      `find "${gradleCache}/org.jetbrains.kotlin/kotlin-compose-compiler-plugin" ${pluginFilter} 2>/dev/null | sort -V | tail -1`,
       { encoding: 'utf8' }
     ).trim();
     if (plugin && fs.existsSync(plugin)) _composePlugin = plugin;
@@ -175,8 +184,6 @@ function resolveOnce(projectRoot) {
             } catch { return ''; }
           })();
       if (fs.existsSync(fullCompiler)) {
-        // Version from full compiler JAR — Kotlin deps must match to avoid metadata crashes
-        const compilerVer = path.basename(fullCompiler).match(/kotlin-compiler-(\d+\.\d+\.\d+)\.jar/)?.[1];
         const findJar = (group, artifact, version) => {
           try {
             const filter = version
@@ -189,9 +196,13 @@ function resolveOnce(projectRoot) {
           } catch { return ''; }
         };
 
-        // The full compiler JAR bundles its own kotlin classes — only add deps it needs externally
+        // Full compiler + version-matched stdlib (must match to avoid FunctionTypeKind crash)
+        const cfgVer = (() => { try { return JSON.parse(fs.readFileSync(path.join(projectRoot, '.nativ/nativ.config.json'), 'utf8')).kotlin?.version; } catch { return null; } })();
         const jvmDeps = [
           fullCompiler,
+          findJar('org.jetbrains.kotlin', 'kotlin-stdlib', cfgVer),
+          findJar('org.jetbrains.kotlin', 'kotlin-script-runtime', cfgVer),
+          findJar('org.jetbrains.kotlinx', 'kotlinx-coroutines-core-jvm', '1.8.0'),
           findJar('org.jetbrains.intellij.deps', 'trove4j'),
           findJar('org.jetbrains', 'annotations'),
         ].filter(Boolean);
@@ -379,23 +390,7 @@ function compileKotlinComponent(filepath, projectRoot, name, moduleId,
     .map(m => m[1]);
 
   if (isCompose) {
-    // Rewrite imports for inline layout functions to use our non-inline wrappers
-    // (compiling without the plugin — pretransform JAR provides inline bodies)
-    const wrapperRewrites = {
-      'androidx.compose.foundation.layout.Box': 'com.nativfabric.compose.Box',
-      'androidx.compose.foundation.layout.Column': 'com.nativfabric.compose.Column',
-      'androidx.compose.foundation.layout.Row': 'com.nativfabric.compose.Row',
-      'androidx.compose.foundation.layout.Spacer': 'com.nativfabric.compose.Spacer',
-    };
-    userImports = userImports.map(imp => {
-      for (const [from, to] of Object.entries(wrapperRewrites)) {
-        if (imp.includes(from)) return imp.replace(from, to);
-      }
-      if (imp.includes('androidx.compose.foundation.layout.*')) {
-        return imp + '\nimport com.nativfabric.compose.*';
-      }
-      return imp;
-    });
+    // With the full compiler + Compose plugin, use real imports — no wrapper rewrites.
     // Compose component — needs ComposeView wrapper (requires Compose compiler plugin)
     const lines = [
       `// Auto-generated Compose component wrapper for ${moduleId}.kt`,
