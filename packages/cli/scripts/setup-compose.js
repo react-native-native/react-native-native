@@ -130,10 +130,12 @@ async function setupKotlinCompiler() {
 // ─── Step 2: Compose compiler plugin ───────────────────────────────────
 
 function setupComposePlugin() {
+  // Match the Kotlin version from config — plugin MUST match compiler version
   const plugin = findInGradleCache(
     'org.jetbrains.kotlin',
     'kotlin-compose-compiler-plugin',
-    '*.jar'
+    null,
+    KOTLIN_VERSION
   );
   if (plugin) {
     console.log(`✓ Compose compiler plugin (from Gradle cache)`);

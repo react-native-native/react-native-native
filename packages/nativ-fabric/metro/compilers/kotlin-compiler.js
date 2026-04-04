@@ -189,13 +189,9 @@ function resolveOnce(projectRoot) {
           } catch { return ''; }
         };
 
-        // Version-match Kotlin deps, latest for third-party
-        const matchedStdlib = findJar('org.jetbrains.kotlin', 'kotlin-stdlib', compilerVer);
+        // The full compiler JAR bundles its own kotlin classes — only add deps it needs externally
         const jvmDeps = [
           fullCompiler,
-          matchedStdlib,
-          findJar('org.jetbrains.kotlin', 'kotlin-script-runtime', compilerVer),
-          findJar('org.jetbrains.kotlinx', 'kotlinx-coroutines-core-jvm'),
           findJar('org.jetbrains.intellij.deps', 'trove4j'),
           findJar('org.jetbrains', 'annotations'),
         ].filter(Boolean);
