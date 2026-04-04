@@ -1,7 +1,7 @@
 {
   "name": "@react-native-native/cli",
   "description": "CLI tools for React Native Native — setup, diagnostics, and build commands.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "bin": {
     "nativ": "./bin/nativ.js"

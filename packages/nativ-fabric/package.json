@@ -1,7 +1,7 @@
 {
   "name": "@react-native-native/nativ-fabric",
   "description": "Write native code directly in your React Native project. Import like any Javascript module.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "main": "src/index.ts",
   "codegenConfig": {
     "name": "NativFabricSpec",
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@expo/config-plugins": ">=9.0.0",
-    "@react-native-native/cli": "^0.1.0"
+    "@react-native-native/cli": "^0.2.0"
   },
   "peerDependencies": {
     "react": "*",
