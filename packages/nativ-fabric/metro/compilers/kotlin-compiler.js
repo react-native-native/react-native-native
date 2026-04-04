@@ -164,10 +164,10 @@ function resolveOnce(projectRoot) {
     ).trim();
     if (plugin && fs.existsSync(plugin)) _composePlugin = plugin;
 
-    // Build the full (non-embeddable) compiler command for Compose
-    // Build the full (non-embeddable) compiler command for Compose
-    // The full compiler has un-shaded com.intellij.* classes that the Compose plugin needs
-    if (_composePlugin && projectRoot) {
+    // Full compiler + plugin disabled: IR lowering crashes on inline Composables
+    // from AAR classes.jar (missing klib/IR metadata). Using system kotlinc + pretransform instead.
+    // TODO: re-enable when klib artifacts are available on the compilation classpath.
+    if (false && _composePlugin && projectRoot) {
       // Read Kotlin version from config, fall back to scanning for any kotlin-compiler-*.jar
       let _ktVersion = null;
       try {
@@ -390,7 +390,23 @@ function compileKotlinComponent(filepath, projectRoot, name, moduleId,
     .map(m => m[1]);
 
   if (isCompose) {
-    // With the full compiler + Compose plugin, use real imports — no wrapper rewrites.
+    // Rewrite inline layout imports to non-inline wrappers
+    // (Compose plugin can't inline from AAR classes.jar — missing IR metadata)
+    const wrapperRewrites = {
+      'androidx.compose.foundation.layout.Box': 'com.nativfabric.compose.Box',
+      'androidx.compose.foundation.layout.Column': 'com.nativfabric.compose.Column',
+      'androidx.compose.foundation.layout.Row': 'com.nativfabric.compose.Row',
+      'androidx.compose.foundation.layout.Spacer': 'com.nativfabric.compose.Spacer',
+    };
+    userImports = userImports.map(imp => {
+      for (const [from, to] of Object.entries(wrapperRewrites)) {
+        if (imp.includes(from)) return imp.replace(from, to);
+      }
+      if (imp.includes('androidx.compose.foundation.layout.*')) {
+        return imp + '\nimport com.nativfabric.compose.*';
+      }
+      return imp;
+    });
     // Compose component — needs ComposeView wrapper (requires Compose compiler plugin)
     const lines = [
       `// Auto-generated Compose component wrapper for ${moduleId}.kt`,
