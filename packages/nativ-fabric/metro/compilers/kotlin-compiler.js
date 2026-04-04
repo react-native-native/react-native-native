@@ -174,10 +174,15 @@ function resolveOnce(projectRoot) {
             } catch { return ''; }
           })();
       if (fs.existsSync(fullCompiler)) {
-        const findJar = (group, artifact) => {
+        // Extract version from compiler JAR name to find matching Kotlin deps
+        const compilerVer = path.basename(fullCompiler).match(/kotlin-compiler-(\d+\.\d+\.\d+)\.jar/)?.[1];
+        const findJar = (group, artifact, matchVersion) => {
           try {
+            const verFilter = matchVersion && compilerVer
+              ? `-name "${artifact}-${compilerVer}.jar"`
+              : `-name "${artifact}-*.jar" -not -name "*sources*" -not -name "*javadoc*"`;
             return execSync(
-              `find "${gradleCache}/${group}/${artifact}" -name "*.jar" -not -name "*sources*" -not -name "*javadoc*" 2>/dev/null | sort -V | tail -1`,
+              `find "${gradleCache}/${group}/${artifact}" ${verFilter} 2>/dev/null | sort -V | tail -1`,
               { encoding: 'utf8' }
             ).trim();
           } catch { return ''; }
@@ -185,8 +190,8 @@ function resolveOnce(projectRoot) {
 
         const jvmDeps = [
           fullCompiler,
-          findJar('org.jetbrains.kotlin', 'kotlin-stdlib'),
-          findJar('org.jetbrains.kotlin', 'kotlin-script-runtime'),
+          findJar('org.jetbrains.kotlin', 'kotlin-stdlib', true),
+          findJar('org.jetbrains.kotlin', 'kotlin-script-runtime', true),
           findJar('org.jetbrains.kotlinx', 'kotlinx-coroutines-core-jvm'),
           findJar('org.jetbrains.intellij.deps', 'trove4j'),
           findJar('org.jetbrains', 'annotations'),
@@ -240,7 +245,11 @@ function compileKotlinDex(filepath, projectRoot) {
 
   const name = path.basename(filepath, '.kt');
   const moduleId = name.toLowerCase();
-  const outputDir = path.join(projectRoot, '.nativ/dylibs');
+  // .dex is arch-independent but middleware serves from dylibs/{target}/
+  const target = fs.existsSync(path.join(projectRoot, '.nativ/android-target'))
+    ? fs.readFileSync(path.join(projectRoot, '.nativ/android-target'), 'utf8').trim()
+    : 'arm64-v8a';
+  const outputDir = path.join(projectRoot, '.nativ/dylibs', target);
   const buildDir = path.join(projectRoot, '.nativ/build', `kt_${moduleId}`);
   fs.mkdirSync(buildDir, { recursive: true });
   fs.mkdirSync(outputDir, { recursive: true });
@@ -482,7 +491,17 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
 
   // Step 1: kotlinc → .class files
   const cp = [_androidJar];
-  if (_kotlinStdlib) cp.push(_kotlinStdlib);
+
+  // For Compose: use stdlib matching the Compose compiler version
+  if (isCompose && _kotlincComposeCmd) {
+    const composeStdlib = _kotlincComposeCmd.match(/kotlin-stdlib[/-](\d+\.\d+\.\d+)/)?.[0];
+    const matchedStdlib = composeStdlib
+      ? _kotlincComposeCmd.split(':').find(p => p.includes('kotlin-stdlib'))
+      : _kotlinStdlib;
+    if (matchedStdlib) cp.push(matchedStdlib);
+  } else if (_kotlinStdlib) {
+    cp.push(_kotlinStdlib);
+  }
 
   // Add Compose JARs for Compose components
   if (isCompose) {

@@ -300,7 +300,7 @@ static void installNativ(jsi::Runtime &rt) {
           auto dotDex = url.rfind(".dex");
           std::string moduleId = (lastSlash != std::string::npos && dotDex != std::string::npos)
               ? url.substr(lastSlash + 1, dotDex - lastSlash - 1) : "";
-          if (moduleId.substr(0, 7) == "nativ_") moduleId = moduleId.substr(7);
+          if (moduleId.substr(0, 6) == "nativ_") moduleId = moduleId.substr(6);
           auto lastUs = moduleId.rfind('_');
           if (lastUs != std::string::npos && moduleId.length() - lastUs - 1 == 8) {
             moduleId = moduleId.substr(0, lastUs);

@@ -153,6 +153,10 @@ function setupComposeJars() {
     ['androidx.compose.runtime', `runtime-android`],
     ['androidx.compose.runtime', `runtime-saveable-android`],
     ['androidx.compose.ui', `ui-android`],
+    ['androidx.compose.ui', `ui-graphics-android`],
+    ['androidx.compose.ui', `ui-text-android`],
+    ['androidx.compose.ui', `ui-unit-android`],
+    ['androidx.compose.ui', `ui-geometry-android`],
     ['androidx.compose.foundation', `foundation-android`],
     ['androidx.compose.foundation', `foundation-layout-android`],
     ['androidx.compose.material3', `material3-android`],
@@ -260,6 +264,7 @@ function setupWrappersJar() {
 package com.nativfabric.compose
 
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
@@ -277,14 +282,18 @@ fun Box(
 @Composable
 fun Column(
     modifier: Modifier = Modifier,
+    verticalArrangement: Arrangement.Vertical = Arrangement.Top,
+    horizontalAlignment: Alignment.Horizontal = Alignment.Start,
     content: @Composable ColumnScope.() -> Unit
-) = androidx.compose.foundation.layout.Column(modifier = modifier, content = content)
+) = androidx.compose.foundation.layout.Column(modifier, verticalArrangement, horizontalAlignment, content)
 
 @Composable
 fun Row(
     modifier: Modifier = Modifier,
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
+    verticalAlignment: Alignment.Vertical = Alignment.Top,
     content: @Composable RowScope.() -> Unit
-) = androidx.compose.foundation.layout.Row(modifier = modifier, content = content)
+) = androidx.compose.foundation.layout.Row(modifier, horizontalArrangement, verticalAlignment, content)
 
 @Composable
 fun Spacer(modifier: Modifier = Modifier) = androidx.compose.foundation.layout.Spacer(modifier)
