@@ -156,8 +156,9 @@ function resolveOnce(projectRoot) {
     if (plugin && fs.existsSync(plugin)) _composePlugin = plugin;
 
     // Build the full (non-embeddable) compiler command for Compose
-    // The full compiler has un-shaded com.intellij.* classes that the Compose plugin needs
-    if (_composePlugin && projectRoot) {
+    // Build the full (non-embeddable) compiler command for Compose
+    // DISABLED: IR lowering crashes with extracted AAR JARs — using pretransform + host JAR instead
+    if (false && _composePlugin && projectRoot) {
       // Read Kotlin version from config, fall back to scanning for any kotlin-compiler-*.jar
       let _ktVersion = null;
       try {
@@ -381,6 +382,7 @@ function compileKotlinComponent(filepath, projectRoot, name, moduleId,
 
   if (isCompose) {
     // Rewrite imports for inline layout functions to use our non-inline wrappers
+    // (compiling without the plugin — pretransform JAR provides inline bodies)
     const wrapperRewrites = {
       'androidx.compose.foundation.layout.Box': 'com.nativfabric.compose.Box',
       'androidx.compose.foundation.layout.Column': 'com.nativfabric.compose.Column',
@@ -391,7 +393,6 @@ function compileKotlinComponent(filepath, projectRoot, name, moduleId,
       for (const [from, to] of Object.entries(wrapperRewrites)) {
         if (imp.includes(from)) return imp.replace(from, to);
       }
-      // Rewrite wildcard import for foundation.layout
       if (imp.includes('androidx.compose.foundation.layout.*')) {
         return imp + '\nimport com.nativfabric.compose.*';
       }
@@ -413,10 +414,8 @@ function compileKotlinComponent(filepath, projectRoot, name, moduleId,
       `object ${className} {`,
       '    @JvmStatic',
       '    fun render(parent: ViewGroup, props: Map<String, Any?>) {',
-      '        // ComposeView + setContent compiled in same pass as user code',
-      '        // so the Compose plugin transforms everything consistently',
-      '        val composeView = ComposeView(parent.context)',
-      '        composeView.setContent {',
+      '        // Use ComposeHost (pre-compiled with Compose plugin) to bridge setContent',
+      '        com.nativfabric.ComposeHost.setContent(parent) {',
     ];
 
     const compFnMatch = cleanSrc.match(/@Composable\s+fun\s+(\w+)\s*\(([^)]*)\)/);
@@ -424,7 +423,6 @@ function compileKotlinComponent(filepath, projectRoot, name, moduleId,
     const compParams = compFnMatch && compFnMatch[2] ? compFnMatch[2].trim() : '';
 
     if (compParams) {
-      // Parse params and generate prop extraction
       const args = compParams.split(',').map(p => p.trim()).filter(Boolean);
       const argExprs = args.map(p => {
         const m = p.match(/(\w+)\s*:\s*(.+)/);
@@ -446,9 +444,6 @@ function compileKotlinComponent(filepath, projectRoot, name, moduleId,
       lines.push(`            ${compFnName}()`);
     }
     lines.push('        }');
-    lines.push('        parent.addView(composeView, FrameLayout.LayoutParams(');
-    lines.push('            FrameLayout.LayoutParams.MATCH_PARENT,');
-    lines.push('            FrameLayout.LayoutParams.MATCH_PARENT))');
     lines.push('    }');
     lines.push('}');
 
@@ -492,13 +487,11 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
   // Step 1: kotlinc → .class files
   const cp = [_androidJar];
 
-  // For Compose: use stdlib matching the Compose compiler version
+  // For Compose: use stdlib matching the Compose compiler (2.1.20), not the system one (2.3.0)
   if (isCompose && _kotlincComposeCmd) {
-    const composeStdlib = _kotlincComposeCmd.match(/kotlin-stdlib[/-](\d+\.\d+\.\d+)/)?.[0];
-    const matchedStdlib = composeStdlib
-      ? _kotlincComposeCmd.split(':').find(p => p.includes('kotlin-stdlib'))
-      : _kotlinStdlib;
+    const matchedStdlib = _kotlincComposeCmd.split(':').find(p => p.includes('kotlin-stdlib'));
     if (matchedStdlib) cp.push(matchedStdlib);
+    else if (_kotlinStdlib) cp.push(_kotlinStdlib);
   } else if (_kotlinStdlib) {
     cp.push(_kotlinStdlib);
   }
@@ -530,7 +523,7 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
     }
   }
 
-  // Use full (non-embeddable) compiler for Compose, embeddable for everything else
+  // Use JVM full compiler for Compose (version-matched with plugin), system kotlinc for everything else
   const compilerCmd = (isCompose && _kotlincComposeCmd) ? _kotlincComposeCmd : _kotlincCmd;
 
   const kotlincCmd = [
@@ -542,7 +535,7 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
     '-jvm-target', '17',
   ];
 
-  // Add Compose compiler plugin via -Xplugin (only works with full compiler)
+  // Add Compose compiler plugin via -Xplugin (only with version-matched full compiler)
   if (isCompose && _composePlugin && _kotlincComposeCmd) {
     kotlincCmd.push(`-Xplugin=${_composePlugin}`);
   }
@@ -605,12 +598,17 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
     return null;
   }
 
+  // Use per-module temp dir for d8 output to avoid classes.dex rename races
+  const d8OutDir = path.join(buildDir, 'd8out');
+  try { fs.rmSync(d8OutDir, { recursive: true }); } catch {}
+  fs.mkdirSync(d8OutDir, { recursive: true });
+
   const d8Cmd = [
     _d8Path,
-    '--output', path.dirname(dexPath),
+    '--output', d8OutDir,
     '--lib', _androidJar,
-    '--min-api', '24',
-    '--no-desugaring',
+    '--min-api', isCompose ? '26' : '24',
+    ...(isCompose ? [] : ['--no-desugaring']),
   ];
 
   // Add classpath for d8 to resolve references to Compose/stdlib classes
@@ -630,8 +628,8 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
   const _t2 = Date.now();
   try {
     execSync(d8Cmd.join(' ') + ` @${d8ArgFile}`, { stdio: 'pipe', encoding: 'utf8' });
-    // d8 outputs classes.dex — rename to our target name
-    const d8Output = path.join(path.dirname(dexPath), 'classes.dex');
+    // d8 outputs classes.dex in per-module temp dir — move to target
+    const d8Output = path.join(d8OutDir, 'classes.dex');
     if (fs.existsSync(d8Output)) {
       fs.renameSync(d8Output, dexPath);
     }
