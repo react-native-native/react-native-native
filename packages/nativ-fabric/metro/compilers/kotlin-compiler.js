@@ -157,8 +157,8 @@ function resolveOnce(projectRoot) {
 
     // Build the full (non-embeddable) compiler command for Compose
     // Build the full (non-embeddable) compiler command for Compose
-    // DISABLED: IR lowering crashes with extracted AAR JARs — using pretransform + host JAR instead
-    if (false && _composePlugin && projectRoot) {
+    // The full compiler has un-shaded com.intellij.* classes that the Compose plugin needs
+    if (_composePlugin && projectRoot) {
       // Read Kotlin version from config, fall back to scanning for any kotlin-compiler-*.jar
       let _ktVersion = null;
       try {
@@ -175,24 +175,26 @@ function resolveOnce(projectRoot) {
             } catch { return ''; }
           })();
       if (fs.existsSync(fullCompiler)) {
-        // Extract version from compiler JAR name to find matching Kotlin deps
+        // Version from full compiler JAR — Kotlin deps must match to avoid metadata crashes
         const compilerVer = path.basename(fullCompiler).match(/kotlin-compiler-(\d+\.\d+\.\d+)\.jar/)?.[1];
-        const findJar = (group, artifact, matchVersion) => {
+        const findJar = (group, artifact, version) => {
           try {
-            const verFilter = matchVersion && compilerVer
-              ? `-name "${artifact}-${compilerVer}.jar"`
+            const filter = version
+              ? `-name "${artifact}-${version}.jar"`
               : `-name "${artifact}-*.jar" -not -name "*sources*" -not -name "*javadoc*"`;
             return execSync(
-              `find "${gradleCache}/${group}/${artifact}" ${verFilter} 2>/dev/null | sort -V | tail -1`,
+              `find "${gradleCache}/${group}/${artifact}" ${filter} 2>/dev/null | sort -V | tail -1`,
               { encoding: 'utf8' }
             ).trim();
           } catch { return ''; }
         };
 
+        // Version-match Kotlin deps, latest for third-party
+        const matchedStdlib = findJar('org.jetbrains.kotlin', 'kotlin-stdlib', compilerVer);
         const jvmDeps = [
           fullCompiler,
-          findJar('org.jetbrains.kotlin', 'kotlin-stdlib', true),
-          findJar('org.jetbrains.kotlin', 'kotlin-script-runtime', true),
+          matchedStdlib,
+          findJar('org.jetbrains.kotlin', 'kotlin-script-runtime', compilerVer),
           findJar('org.jetbrains.kotlinx', 'kotlinx-coroutines-core-jvm'),
           findJar('org.jetbrains.intellij.deps', 'trove4j'),
           findJar('org.jetbrains', 'annotations'),
@@ -414,8 +416,8 @@ function compileKotlinComponent(filepath, projectRoot, name, moduleId,
       `object ${className} {`,
       '    @JvmStatic',
       '    fun render(parent: ViewGroup, props: Map<String, Any?>) {',
-      '        // Use ComposeHost (pre-compiled with Compose plugin) to bridge setContent',
-      '        com.nativfabric.ComposeHost.setContent(parent) {',
+      '        val composeView = ComposeView(parent.context)',
+      '        composeView.setContent {',
     ];
 
     const compFnMatch = cleanSrc.match(/@Composable\s+fun\s+(\w+)\s*\(([^)]*)\)/);
@@ -444,6 +446,9 @@ function compileKotlinComponent(filepath, projectRoot, name, moduleId,
       lines.push(`            ${compFnName}()`);
     }
     lines.push('        }');
+    lines.push('        parent.addView(composeView, FrameLayout.LayoutParams(');
+    lines.push('            FrameLayout.LayoutParams.MATCH_PARENT,');
+    lines.push('            FrameLayout.LayoutParams.MATCH_PARENT))');
     lines.push('    }');
     lines.push('}');
 
@@ -487,11 +492,10 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
   // Step 1: kotlinc → .class files
   const cp = [_androidJar];
 
-  // For Compose: use stdlib matching the Compose compiler (2.1.20), not the system one (2.3.0)
+  // Compose needs version-matched stdlib (compiler 2.1.20 can't analyze 2.3.0 metadata)
   if (isCompose && _kotlincComposeCmd) {
-    const matchedStdlib = _kotlincComposeCmd.split(':').find(p => p.includes('kotlin-stdlib'));
-    if (matchedStdlib) cp.push(matchedStdlib);
-    else if (_kotlinStdlib) cp.push(_kotlinStdlib);
+    const matched = _kotlincComposeCmd.split(':').find(p => p.includes('kotlin-stdlib'));
+    cp.push(matched || _kotlinStdlib);
   } else if (_kotlinStdlib) {
     cp.push(_kotlinStdlib);
   }
@@ -569,8 +573,9 @@ function compileAndDex(ktPath, buildDir, dexPath, moduleId, isCompose, projectRo
   }
 
   if (!compiled) {
+    const _cmd = kotlincCmd.join(' ');
     try {
-      execSync(kotlincCmd.join(' '), { stdio: 'pipe', encoding: 'utf8' });
+      execSync(_cmd, { stdio: 'pipe', encoding: 'utf8' });
     } catch (err) {
       console.error(`[nativ] Kotlin compile failed: ${moduleId}.kt`);
       console.error((err.stderr || '').slice(0, 2000));
